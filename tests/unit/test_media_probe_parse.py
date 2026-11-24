@@ -90,3 +90,10 @@ def test_frame_delta_analysis():
     is_vfr, details = analyse_frame_deltas(vfr)
     assert is_vfr and details["fraction_regular"] < 0.98
     assert analyse_frame_deltas([0.0, 0.1])[0] is False
+
+
+def test_decode_errors_ignore_null_muxer_timestamp_warnings():
+    from pipeline.media_probe import decode_errors
+    stderr = ("[null @ 0000022a80489a80] Application provided invalid, non monotonically increasing dts to muxer in "
+              "stream 0: 29 >= 29\n[h264 @ 0000020] Invalid NAL unit size (1234 > 99).\n\n")
+    assert decode_errors(stderr) == ["[h264 @ 0000020] Invalid NAL unit size (1234 > 99)."]

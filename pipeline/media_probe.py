@@ -275,7 +275,16 @@ def decode_check(path: Path, seconds: float = 5, start_sec: float = 0.0) -> list
          "-i", str(path), "-f", "null", "-"],
         timeout=300, check=False,
     )
-    errs = [ln for ln in proc.stderr.splitlines() if ln.strip()]
+    errs = decode_errors(proc.stderr)
     if proc.returncode != 0 and not errs:
         errs = [f"ffmpeg exited with {proc.returncode}"]
     return errs
+
+
+# Warnings from the dummy output, not the decoder: phone/VFR recordings often have frames sharing a timestamp,
+# which the null muxer reports ("non monotonically increasing dts"). They say nothing about decodability.
+_HARMLESS = ("[null @", "non monotonically increasing dts", "non-monotonic dts")
+
+
+def decode_errors(stderr: str) -> list[str]:
+    return [ln for ln in stderr.splitlines() if ln.strip() and not any(h in ln.lower() for h in _HARMLESS)]
