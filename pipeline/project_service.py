@@ -65,6 +65,7 @@ class StudioService(AnalysisServiceMixin, ContentServiceMixin, PublishServiceMix
 
     def refresh_hardware(self, run_whisper_smoke: bool = False) -> hardware.HardwareReport:
         report = hardware.detect(run_whisper_smoke=run_whisper_smoke)
+        report = hardware.carry_over_cuda_test(report, hardware.load_report(self.paths.hardware_report_file))
         hardware.save_report(report, self.paths.hardware_report_file)
         return report
 

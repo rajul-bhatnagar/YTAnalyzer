@@ -293,6 +293,21 @@ def detect(run_whisper_smoke: bool = False, whisper_model: str = "tiny") -> Hard
     return r
 
 
+def carry_over_cuda_test(new: HardwareReport, prev: HardwareReport | None) -> HardwareReport:
+    """A check without --whisper-smoke must not erase an earlier PASSED CUDA Whisper test. The old result is kept
+    only when the GPU, driver and CTranslate2 version are identical; any change requires a new test."""
+    def sig(r: HardwareReport) -> tuple:
+        return tuple((g.name, g.driver_version) for g in r.gpus), r.ct2_version
+
+    if (prev is not None and new.whisper_cuda_smoke == "not_run" and prev.whisper_cuda_smoke == "passed"
+            and new.ct2_cuda_devices > 0 and sig(new) == sig(prev)):
+        new.whisper_cuda_smoke = "passed"
+        new.notes = [n for n in new.notes if "not yet verified" not in n]
+        new.notes.append("CUDA Whisper: passed in an earlier test on this same GPU/driver (result kept).")
+        new.mode = decide_mode(new).value
+    return new
+
+
 def save_report(report: HardwareReport, file: Path) -> None:
     file.parent.mkdir(parents=True, exist_ok=True)
     tmp = file.with_suffix(".tmp")

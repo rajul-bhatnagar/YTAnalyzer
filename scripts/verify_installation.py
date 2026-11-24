@@ -108,7 +108,9 @@ def main() -> int:
         from pipeline import hardware  # noqa: PLC0415
         from pipeline.paths import StudioPaths  # noqa: PLC0415
         r = hardware.detect(run_whisper_smoke=args.whisper_smoke)
-        hardware.save_report(r, StudioPaths.default().hardware_report_file)
+        report_file = StudioPaths.default().hardware_report_file
+        r = hardware.carry_over_cuda_test(r, hardware.load_report(report_file))
+        hardware.save_report(r, report_file)
         check("ONNX Runtime smoke test", r.onnx_smoke_ok, r.onnx_error or ", ".join(r.onnx_providers))
         gpu = "; ".join(f"{g.name}, driver {g.driver_version}, {g.memory_total_mb} MB" for g in r.gpus) or "none"
         check("NVIDIA GPU", True, gpu, required=False)

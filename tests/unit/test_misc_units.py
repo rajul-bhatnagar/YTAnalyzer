@@ -129,3 +129,20 @@ def test_report_roundtrip(tmp_path):
     assert back and back.gpus[0].memory_total_mb == 6000 and back.notes == ["n"]
     (tmp_path / "bad.json").write_text("{")
     assert hardware.load_report(tmp_path / "bad.json") is None
+
+
+def test_cuda_test_result_survives_a_check_without_smoke():
+    g = hardware.GpuInfo(name="NVIDIA GeForce RTX 4050 Laptop GPU", driver_version="617.42", memory_total_mb=6141,
+                         memory_free_mb=5900)
+    prev = hardware.HardwareReport(nvidia_smi_found=True, gpus=[g], nvenc_encode_ok=True, ct2_version="4.9.1",
+                                   ct2_cuda_devices=1, whisper_cuda_smoke="passed")
+    new = hardware.HardwareReport(nvidia_smi_found=True, gpus=[g], nvenc_encode_ok=True, ct2_version="4.9.1",
+                                  ct2_cuda_devices=1, notes=["CUDA device visible to CTranslate2 but not yet verified."])
+    r = hardware.carry_over_cuda_test(new, prev)
+    assert r.whisper_cuda_smoke == "passed" and r.mode == "NVIDIA_CUDA_AND_NVENC" and len(r.notes) == 1
+    g2 = hardware.GpuInfo(name=g.name, driver_version="620.00", memory_total_mb=6141, memory_free_mb=5900)
+    other = hardware.HardwareReport(nvidia_smi_found=True, gpus=[g2], ct2_version="4.9.1", ct2_cuda_devices=1)
+    assert hardware.carry_over_cuda_test(other, prev).whisper_cuda_smoke == "not_run"  # new driver -> retest
+    failed = hardware.HardwareReport(nvidia_smi_found=True, gpus=[g], ct2_version="4.9.1", ct2_cuda_devices=1,
+                                     whisper_cuda_smoke="failed")
+    assert hardware.carry_over_cuda_test(failed, prev).whisper_cuda_smoke == "failed"  # a real new result wins
