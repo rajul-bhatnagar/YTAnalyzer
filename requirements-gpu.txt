@@ -1,0 +1,6 @@
+# NVIDIA CUDA runtime libraries for faster-whisper (CTranslate2 4.x needs CUDA 12 cuBLAS + cuDNN 9).
+# STATUS: UNVERIFIED on hardware. Installed only when an NVIDIA GPU is detected AND the user agrees.
+# The app uses CUDA for Whisper only after scripts/verify_installation.py --whisper-smoke passes;
+# otherwise it stays on CPU. This file never contains onnxruntime-gpu (see ADR-4).
+nvidia-cublas-cu12>=12.4,<13
+nvidia-cudnn-cu12>=9.1,<10

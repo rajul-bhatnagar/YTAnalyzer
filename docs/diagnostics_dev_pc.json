@@ -1,0 +1,98 @@
+{
+  "software": {
+    "app": "0.1.0",
+    "python": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "streamlit": "1.67.0",
+    "pydantic": "2.14.4",
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.9.1",
+    "onnxruntime": "1.32.0",
+    "av": "19.0.2",
+    "numpy": "2.5.5",
+    "opencv-python-headless": "5.1.0.95",
+    "google-genai": "3.6.1",
+    "httpx": "0.28.1",
+    "ffmpeg": "ffmpeg version 9.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  "hardware": {
+    "created_at": 1795514652.118128,
+    "python_version": "3.12.10",
+    "platform": "win32",
+    "nvidia_smi_found": false,
+    "gpus": [],
+    "ffmpeg_ok": true,
+    "ffmpeg_version": "ffmpeg version 9.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+    "nvenc_listed": true,
+    "nvenc_encode_ok": false,
+    "nvenc_error": "Skipped: FFmpeg lists NVENC but no NVIDIA GPU was detected",
+    "ct2_version": "4.9.1",
+    "ct2_cuda_devices": 0,
+    "ct2_error": null,
+    "onnx_providers": [
+      "AzureExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "onnx_smoke_ok": true,
+    "onnx_error": null,
+    "whisper_cuda_smoke": "not_run",
+    "whisper_cuda_error": null,
+    "nvidia_dll_dirs": [],
+    "mode": "CPU",
+    "notes": []
+  },
+  "secrets_configured": {
+    "GEMINI_API_KEY": false,
+    "YOUTUBE_CLIENT_SECRETS_FILE": false
+  },
+  "settings": {
+    "ai": {
+      "provider": "ollama",
+      "gemini_model": "gemini-3.8-flash",
+      "gemini_mode": "frames",
+      "gemini_video_max_windows": 6,
+      "ollama_base_url": "http://localhost:11434",
+      "ollama_model": "",
+      "ollama_num_ctx": 8192,
+      "gemini_visual_enabled": false,
+      "cloud_consent": "",
+      "cloud_consent_at": "",
+      "on_quota": "fallback",
+      "max_requests_per_job": 120,
+      "min_request_interval_sec": 4.0,
+      "request_timeout_sec": 300,
+      "temperature": 0.2,
+      "max_frames_per_request": 16
+    },
+    "whisper": {
+      "model": "auto",
+      "device": "auto",
+      "cpu_default_model": "small",
+      "cpu_compute_type": "int8",
+      "cuda_compute_type": "float16",
+      "vad_filter": true,
+      "beam_size": 5,
+      "uncertain_word_probability": 0.5,
+      "allow_download": false
+    },
+    "import": {
+      "video_extensions": [
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".flv",
+        ".ts",
+        ".webm",
+        ".m4v"
+      ],
+      "max_upload_mb": 2048,
+      "min_free_disk_gb": 20,
+      "full_checksum": true
+    }
+  },
+  "database_schema": 3,
+  "projects": 1,
+  "free_disk_gb": 906.3,
+  "studio_root_name": "YTAnalyzer"
+}

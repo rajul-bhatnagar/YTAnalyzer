@@ -1,0 +1,17 @@
+# Core dependencies. Tested on Windows 11 x64 with Python 3.12.10 (2026-11-24).
+# Exact pins = the tested set. Change only after re-running the test suite.
+# NOTE: onnxruntime (CPU) is the ONLY ONNX runtime used. faster-whisper requires it for
+# Silero VAD. Do NOT install onnxruntime-gpu into the same environment (see docs/PHASE0_ADR.md ADR-4).
+streamlit==1.67.0
+pydantic==2.14.4
+faster-whisper==1.2.1
+ctranslate2==4.9.1
+av==19.0.2
+onnxruntime==1.32.0
+numpy==2.5.5
+pillow==13.0.0
+opencv-python-headless==5.1.0.95
+soundfile==0.14.0
+google-genai==3.6.1
+httpx==0.28.1
+python-dotenv==1.2.4

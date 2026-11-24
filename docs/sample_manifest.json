@@ -1,0 +1,641 @@
+{
+  "project_id": "6f396afdf35f",
+  "job_id": "fd2464be1872",
+  "game_name": "Sample Game",
+  "source": {
+    "path": "01_RAW_INPUT/Sample Game/sample_recording.mp4",
+    "size_bytes": 28638614,
+    "sha256": "addf4f69857a15aca4a6a91f93f4b6f0126f2967a7cc8b0fd91637f64c5e19c1",
+    "quick_fingerprint": "edfda97ce10934be3f715e295bf8984d3e407418039cc4c50f6abe0dbb8be6fd"
+  },
+  "settings": {
+    "schema": 1,
+    "import": {
+      "video_extensions": [
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".flv",
+        ".ts",
+        ".webm",
+        ".m4v"
+      ],
+      "max_upload_mb": 2048,
+      "min_free_disk_gb": 20,
+      "full_checksum": true
+    },
+    "project": {
+      "content_style": "Custom",
+      "language": "auto"
+    },
+    "whisper": {
+      "model": "auto",
+      "device": "auto",
+      "cpu_default_model": "small",
+      "cpu_compute_type": "int8",
+      "cuda_compute_type": "float16",
+      "vad_filter": true,
+      "beam_size": 5,
+      "uncertain_word_probability": 0.5,
+      "allow_download": false
+    },
+    "transcription": {
+      "source": "none"
+    },
+    "ai": {
+      "provider": "none",
+      "gemini_model": "gemini-3.8-flash",
+      "gemini_mode": "frames",
+      "gemini_video_max_windows": 6,
+      "ollama_base_url": "http://localhost:11434",
+      "ollama_model": "",
+      "ollama_num_ctx": 8192,
+      "gemini_visual_enabled": false,
+      "cloud_consent": "",
+      "cloud_consent_at": "",
+      "on_quota": "fallback",
+      "max_requests_per_job": 120,
+      "min_request_interval_sec": 4.0,
+      "request_timeout_sec": 300,
+      "temperature": 0.2,
+      "max_frames_per_request": 16
+    },
+    "audio": {
+      "mode": "game_only",
+      "voice_source": "auto",
+      "voiceover_file": "",
+      "game_volume_db": -6.0,
+      "voice_gain_db": 0.0,
+      "voice_offset_sec": 0.0,
+      "duck_threshold": 0.03,
+      "duck_ratio": 6.0,
+      "duck_attack_ms": 20,
+      "duck_release_ms": 400,
+      "duck_makeup": 1.0,
+      "highpass_enabled": false,
+      "highpass_hz": 80,
+      "noise_reduction_enabled": false,
+      "noise_reduction_db": 12,
+      "loudnorm_enabled": true,
+      "loudnorm_target_lufs": -14.0,
+      "loudnorm_true_peak": -1.5,
+      "limiter_enabled": true,
+      "fade_in_sec": 0.0,
+      "fade_out_sec": 0.0,
+      "final_sample_rate": 48000,
+      "asr_sample_rate": 16000,
+      "preview_seconds": 30
+    },
+    "silence": {
+      "policy": "none",
+      "min_inactive_sec": 20,
+      "preroll_sec": 2.0,
+      "postroll_sec": 2.0,
+      "min_cut_sec": 8.0,
+      "motion_threshold": 1.5,
+      "game_audio_threshold_db": -45.0,
+      "event_override_db": 12.0,
+      "signal_fps": 2.0,
+      "signal_hop_sec": 0.5
+    },
+    "analysis": {
+      "window_sec": 180,
+      "frame_interval_sec": 5,
+      "frame_width": 640,
+      "max_frames_per_window": 24,
+      "extra_frames_per_event": 2,
+      "scene_change_k": 6.0,
+      "scene_change_min": 12.0,
+      "transient_min_db": 10.0,
+      "voice_emphasis_min_db": 6.0,
+      "event_merge_gap_sec": 3.0
+    },
+    "highlights": {
+      "candidate_count": 3,
+      "min_sec": 20,
+      "max_sec": 50,
+      "context_before_sec": 8,
+      "aftermath_sec": 6,
+      "handle_sec": 5,
+      "allow_overlap": false
+    },
+    "render": {
+      "quality_preset": "high",
+      "encoder": "auto",
+      "audio_bitrate_k": 320
+    },
+    "timeline": {
+      "export_edl": true,
+      "export_fcp7_xml": true
+    },
+    "probe": {
+      "vfr_sample_seconds": 30,
+      "track_preview_seconds": 20
+    },
+    "shorts": {
+      "layout": "blur_fit",
+      "quality": "fast",
+      "captions_enabled": true,
+      "caption_position": "bottom",
+      "caption_size": 72,
+      "hook_mode": "no_speech"
+    },
+    "thumbnails": {
+      "count": 5
+    },
+    "pack": {
+      "language": ""
+    },
+    "jobs": {
+      "last_operation": "assets"
+    },
+    "ui": {
+      "inline_video_max_mb": 300
+    }
+  },
+  "software": {
+    "app": "0.1.0",
+    "python": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "streamlit": "1.67.0",
+    "pydantic": "2.14.4",
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.9.1",
+    "onnxruntime": "1.32.0",
+    "av": "19.0.2",
+    "numpy": "2.5.5",
+    "opencv-python-headless": "5.1.0.95",
+    "google-genai": "3.6.1",
+    "httpx": "0.28.1",
+    "ffmpeg": "ffmpeg version 9.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  "hardware_mode": null,
+  "stages": {
+    "probe": {
+      "status": "COMPLETED",
+      "fingerprint": "306775f840ed994c2c182ac0872a5a0832af0d64e59deafa10055cbe0bed8797",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/inspection/media_info.json",
+          "size_bytes": 1620,
+          "sha256": "78215b77014959e19723e5d03173716c5b43c5e2b2dca39a5d4aae4584782de5",
+          "media": null,
+          "stage": "probe",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:15+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "checksum": {
+      "status": "COMPLETED",
+      "fingerprint": "a78ea1d7c65779d8261b4e7c31b6cb1f63fb3ebeae4a18053796f5cada36ec11",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/inspection/source_checksum.json",
+          "size_bytes": 265,
+          "sha256": "149df1aa69e5ed14b95cc6b122c125e83f7f3ba0867b59b06ed94d3dde0aba2d",
+          "media": null,
+          "stage": "checksum",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:16+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "track_levels": {
+      "status": "COMPLETED",
+      "fingerprint": "f37528f9ed4b8db768806d1acc7f6b1712bc84672460bb3d8e803fa12966285c",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/inspection/track_levels.json",
+          "size_bytes": 104,
+          "sha256": "fc6338583c056baa8920e48a1d1c8d390921269da938051d2f821db075d4bf17",
+          "media": null,
+          "stage": "track_levels",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:18+00:00"
+        }
+      ],
+      "warnings": [
+        "Audio track 3 is silent in the first 2 minutes"
+      ]
+    },
+    "extract_audio": {
+      "status": "COMPLETED",
+      "fingerprint": "89a29f47b99f6de0e1e314876f929e165ebfb9d0ba7578a1ce06ea2a6f079c5c",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track1_combined_mix.wav",
+          "size_bytes": 17280078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:22+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track1_combined_mix_16k.wav",
+          "size_bytes": 2880078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:22+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track2_game.wav",
+          "size_bytes": 17280078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:25+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track2_game_16k.wav",
+          "size_bytes": 2880078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:25+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track3_mic.wav",
+          "size_bytes": 8640078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:27+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/track3_mic_16k.wav",
+          "size_bytes": 2880078,
+          "sha256": null,
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:27+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/tracks/tracks.json",
+          "size_bytes": 1136,
+          "sha256": "52f6de3f3c59337410bbac71157020420615d7d0aad4bd1b6645fcf6e0bef2a6",
+          "media": null,
+          "stage": "extract_audio",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:27+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "voiceover": {
+      "status": "COMPLETED",
+      "fingerprint": "ece624a682e02cdc1cb49417891bda3143781f1a6c13c525c5ba1dd736ae4541",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/voiceover/none.json",
+          "size_bytes": 25,
+          "sha256": "f520833a7f98f7c967a1a492e697bfd81babd4253a4ab767f5a0401bacb05238",
+          "media": null,
+          "stage": "voiceover",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:28+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "signals": {
+      "status": "COMPLETED",
+      "fingerprint": "f7911e301b84365a29733557ea1f45edff890fa3b9fb5e209443c47ddd83d5d3",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/signals/signals.npz",
+          "size_bytes": 1581,
+          "sha256": "b5cb6bf57453062d7f69db4ca977e3a5bd62c53c19682adca02ce3c677c5068d",
+          "media": null,
+          "stage": "signals",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:02:36+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "mix": {
+      "status": "COMPLETED",
+      "fingerprint": "efdbe3f12aa6ce0a28e3615b5ab608be910ec013795c7518a6dca67df6dfddf7",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/mixes/mix_game_only.wav",
+          "size_bytes": 17280078,
+          "sha256": null,
+          "media": null,
+          "stage": "mix",
+          "validation": {
+            "ok": true,
+            "errors": []
+          },
+          "created_at": "2026-11-24T10:03:04+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/audio/mixes/mix_game_only.json",
+          "size_bytes": 1530,
+          "sha256": "50393d4f063a7370fe598d35c240f93ca29a84ce7b9bbc7fb8806222f4bb25d0",
+          "media": null,
+          "stage": "mix",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:04+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "transcribe": {
+      "status": "COMPLETED",
+      "fingerprint": "fabeb22ddc2f222ba9c0388433ad28cbde86ce33c75864e05f9d4164aa2a95a7",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/transcript/transcript_raw.json",
+          "size_bytes": 75,
+          "sha256": "cf19fbc67c68d2eae569fb4598dbc4ad744bb54f086e4e5e1ad9208de2ebe70f",
+          "media": null,
+          "stage": "transcribe",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:05+00:00"
+        }
+      ],
+      "warnings": [
+        "No speech track to transcribe (no mic, voiceover or combined track)."
+      ]
+    },
+    "subtitles": {
+      "status": "COMPLETED",
+      "fingerprint": "c092f526e4acf0fe058da70b9ee1b57f90ea952c6807542061c35e598a603cb7",
+      "files": [
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/transcript.txt",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "media": null,
+          "stage": "subtitles",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:06+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/subtitles.srt",
+          "size_bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "media": null,
+          "stage": "subtitles",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:06+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/words.json",
+          "size_bytes": 84,
+          "sha256": "34f19ea2145a16a3fe6b6e87a3eddc9408cb0357e18942035af28ac21960e43f",
+          "media": null,
+          "stage": "subtitles",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:06+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "signal_events": {
+      "status": "COMPLETED",
+      "fingerprint": "2ce99101f0e1777f7c25e3d4edcf6153d7ae422c5b788a4cb7bd0e3cb53a5cc1",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/analysis/signal_events.json",
+          "size_bytes": 2859,
+          "sha256": "e314e5aaa42b5c6eef8db4ddcedd685408bda0732b8923b91758671b254fcd62",
+          "media": null,
+          "stage": "signal_events",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:06+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "frames": {
+      "status": "COMPLETED",
+      "fingerprint": "702f990f91efeaff8ea3870f9a88d5deb721e165b0876aedf579b0ac453c6631",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/analysis/frames.json",
+          "size_bytes": 6786,
+          "sha256": "d3c9d83f99ac8708abd72c393f26c211fbd4c05a6ee825cf2cb0f4cf59e6a570",
+          "media": null,
+          "stage": "frames",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:29+00:00"
+        }
+      ],
+      "warnings": []
+    },
+    "ai_windows": {
+      "status": "COMPLETED",
+      "fingerprint": "6a469b8172fdeeae8228638931474a12981a7b5a1b7fdbe2d6c232682607a9bd",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/analysis/ai_report.json",
+          "size_bytes": 492,
+          "sha256": "ca6602373111e614db5a442d4107aa847e5f50eb0b5963634d5869ca3d294c5a",
+          "media": null,
+          "stage": "ai_windows",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:30+00:00"
+        }
+      ],
+      "warnings": [
+        "No window was analysed by AI. Highlights are ranked from measured signals only and need your review."
+      ]
+    },
+    "highlights": {
+      "status": "COMPLETED",
+      "fingerprint": "6fd80ffbf40bad991436a350d4172608f2ab1536c7eefb071d6db20d8a2ab410",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/analysis/fused_events.json",
+          "size_bytes": 2769,
+          "sha256": "a4f96ecfb0bd03b6fd460b4ec4f5c799e308aa47dd64ae76b9f6b279b4bf591a",
+          "media": null,
+          "stage": "highlights",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:30+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/highlights.json",
+          "size_bytes": 4141,
+          "sha256": "c65fcedce909f2af331cba7f70838031fa02141728f495e14eac69d9bdcd7d36",
+          "media": null,
+          "stage": "highlights",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:03:30+00:00"
+        }
+      ],
+      "warnings": [
+        "All candidates come from measurements only (no AI description). Watch each one."
+      ]
+    },
+    "short_h1": {
+      "status": "COMPLETED",
+      "fingerprint": "73ac7bd9b7fb064703fee5eb1c12d3be188104c47bc01387c8bd8ec05ab800d0",
+      "files": [
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/shorts/short_h1.mp4",
+          "size_bytes": 2571906,
+          "sha256": null,
+          "media": {
+            "duration": 20.0,
+            "width": 1080,
+            "height": 1920
+          },
+          "stage": "short_h1",
+          "validation": {
+            "ok": true,
+            "errors": []
+          },
+          "created_at": "2026-11-24T10:03:57+00:00"
+        }
+      ],
+      "warnings": [
+        "No transcribed speech in this clip, so there are no word captions (the hook caption is shown instead)."
+      ]
+    },
+    "thumbnails": {
+      "status": "COMPLETED",
+      "fingerprint": "0f046f0acf32e34514f351e059fa2440e32106edf6c38deb31cc39bfc2355f06",
+      "files": [
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/thumbnail_frames/thumb_01_000039100.png",
+          "size_bytes": 175934,
+          "sha256": null,
+          "media": null,
+          "stage": "thumbnails",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/thumbnail_frames/thumb_02_000040000.png",
+          "size_bytes": 18366,
+          "sha256": null,
+          "media": null,
+          "stage": "thumbnails",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        },
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/assets/thumbnails.json",
+          "size_bytes": 2395,
+          "sha256": "8d078fa08ca7c37f4f3548954b661a926b0d6999f0b94c2b6b216e80a2504f7c",
+          "media": null,
+          "stage": "thumbnails",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        }
+      ],
+      "warnings": [
+        "Only 2 distinct, usable frames were found around the highlights."
+      ]
+    },
+    "creator_pack": {
+      "status": "COMPLETED",
+      "fingerprint": "d1a95c3568b4c104708a0841a4acd09e2f19f81654bfc21f49e160ad6772b4f5",
+      "files": [
+        {
+          "path": "02_WORK/sample_game_20261124_6f396a/assets/pack_draft.json",
+          "size_bytes": 3729,
+          "sha256": "f561f1bba73b553e8affc60535d96e513132bb71955da71e0ea60d55cd7ac860",
+          "media": null,
+          "stage": "creator_pack",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/youtube_pack.json",
+          "size_bytes": 3799,
+          "sha256": "ccff355efe777a3a73ccbdc75c5f027b46aeb9f6804ec63596f145e6a5d44a23",
+          "media": null,
+          "stage": "creator_pack",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        },
+        {
+          "path": "03_READY_FOR_REVIEW/sample_game_20261124_6f396a/youtube_pack.txt",
+          "size_bytes": 2918,
+          "sha256": "7d04dcbc14addb5b6d739de86e8800c8960951c8203c31fc492e68e9c3160c9b",
+          "media": null,
+          "stage": "creator_pack",
+          "validation": {
+            "ok": true
+          },
+          "created_at": "2026-11-24T10:04:01+00:00"
+        }
+      ],
+      "warnings": [
+        "The package is a template with [placeholders] (no AI provider produced a valid draft). Edit it on the Metadata page, or regenerate later.",
+        "2 number(s) are not supported by the evidence; see 'Check before publishing'."
+      ]
+    }
+  },
+  "written_at": "2026-11-24T10:04:02+00:00",
+  "_note": "Generated by scripts/make_sample_project.py from synthetic media on the dev PC (CPU, no AI, no network). Paths are relative to the studio folder."
+}

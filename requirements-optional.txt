@@ -1,0 +1,4 @@
+# Optional features. Installed separately by setup_windows.bat; failure here never blocks the core app.
+# Private YouTube upload (official Google API client).
+google-api-python-client==2.202.0
+google-auth-oauthlib==1.5.0

@@ -1,0 +1,18 @@
+{
+  "streams": [
+    {"index": 0, "codec_name": "h264", "codec_type": "video", "width": 2560, "height": 1440, "pix_fmt": "yuv420p",
+     "r_frame_rate": "60000/1001", "avg_frame_rate": "60000/1001", "start_time": "0.000000",
+     "disposition": {"default": 1, "attached_pic": 0}, "tags": {"ENCODER": "Lavc libx264"}},
+    {"index": 1, "codec_name": "aac", "codec_type": "audio", "sample_rate": "48000", "channels": 2,
+     "channel_layout": "stereo", "start_time": "0.000000", "disposition": {"default": 1, "attached_pic": 0},
+     "tags": {"title": "Track1", "language": "und"}},
+    {"index": 2, "codec_name": "aac", "codec_type": "audio", "sample_rate": "48000", "channels": 2,
+     "channel_layout": "stereo", "start_time": "0.000000", "disposition": {"default": 0, "attached_pic": 0},
+     "tags": {"title": "Desktop Audio"}},
+    {"index": 3, "codec_name": "aac", "codec_type": "audio", "sample_rate": "48000", "channels": 1,
+     "channel_layout": "mono", "start_time": "0.021000", "disposition": {"default": 0, "attached_pic": 0},
+     "tags": {"title": "Mic/Aux", "language": "hin"}}
+  ],
+  "format": {"filename": "rec.mkv", "nb_streams": 4, "format_name": "matroska,webm",
+             "duration": "3605.480000", "size": "9876543210", "bit_rate": "21914000"}
+}

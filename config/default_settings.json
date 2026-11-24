@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "import": {
+    "video_extensions": [".mp4", ".mkv", ".mov", ".avi", ".flv", ".ts", ".webm", ".m4v"],
+    "max_upload_mb": 2048,
+    "min_free_disk_gb": 20,
+    "full_checksum": true
+  },
+  "project": {
+    "content_style": "Custom",
+    "language": "auto"
+  },
+  "whisper": {
+    "model": "auto",
+    "device": "auto",
+    "cpu_default_model": "small",
+    "cpu_compute_type": "int8",
+    "cuda_compute_type": "float16",
+    "vad_filter": true,
+    "beam_size": 5,
+    "uncertain_word_probability": 0.5,
+    "allow_download": false
+  },
+  "transcription": {
+    "source": "auto"
+  },
+  "ai": {
+    "provider": "ollama",
+    "gemini_model": "gemini-3.8-flash",
+    "gemini_mode": "frames",
+    "gemini_video_max_windows": 6,
+    "ollama_base_url": "http://localhost:11434",
+    "ollama_model": "",
+    "ollama_num_ctx": 8192,
+    "gemini_visual_enabled": false,
+    "cloud_consent": "",
+    "cloud_consent_at": "",
+    "on_quota": "fallback",
+    "max_requests_per_job": 120,
+    "min_request_interval_sec": 4.0,
+    "request_timeout_sec": 300,
+    "temperature": 0.2,
+    "max_frames_per_request": 16
+  },
+  "audio": {
+    "mode": "game_only",
+    "voice_source": "auto",
+    "voiceover_file": "",
+    "game_volume_db": -6.0,
+    "voice_gain_db": 0.0,
+    "voice_offset_sec": 0.0,
+    "duck_threshold": 0.03,
+    "duck_ratio": 6.0,
+    "duck_attack_ms": 20,
+    "duck_release_ms": 400,
+    "duck_makeup": 1.0,
+    "highpass_enabled": false,
+    "highpass_hz": 80,
+    "noise_reduction_enabled": false,
+    "noise_reduction_db": 12,
+    "loudnorm_enabled": true,
+    "loudnorm_target_lufs": -14.0,
+    "loudnorm_true_peak": -1.5,
+    "limiter_enabled": true,
+    "fade_in_sec": 0.0,
+    "fade_out_sec": 0.0,
+    "final_sample_rate": 48000,
+    "asr_sample_rate": 16000,
+    "preview_seconds": 30
+  },
+  "silence": {
+    "policy": "none",
+    "min_inactive_sec": 20,
+    "preroll_sec": 2.0,
+    "postroll_sec": 2.0,
+    "min_cut_sec": 8.0,
+    "motion_threshold": 1.5,
+    "game_audio_threshold_db": -45.0,
+    "event_override_db": 12.0,
+    "signal_fps": 2.0,
+    "signal_hop_sec": 0.5
+  },
+  "analysis": {
+    "window_sec": 180,
+    "frame_interval_sec": 5,
+    "frame_width": 640,
+    "max_frames_per_window": 24,
+    "extra_frames_per_event": 2,
+    "scene_change_k": 6.0,
+    "scene_change_min": 12.0,
+    "transient_min_db": 10.0,
+    "voice_emphasis_min_db": 6.0,
+    "event_merge_gap_sec": 3.0
+  },
+  "highlights": {
+    "candidate_count": 3,
+    "min_sec": 20,
+    "max_sec": 50,
+    "context_before_sec": 8,
+    "aftermath_sec": 6,
+    "handle_sec": 5,
+    "allow_overlap": false
+  },
+  "render": {
+    "quality_preset": "high",
+    "encoder": "auto",
+    "audio_bitrate_k": 320
+  },
+  "timeline": {
+    "export_edl": true,
+    "export_fcp7_xml": true
+  },
+  "probe": {
+    "vfr_sample_seconds": 30,
+    "track_preview_seconds": 20
+  },
+  "shorts": {
+    "layout": "blur_fit",
+    "quality": "high",
+    "captions_enabled": true,
+    "caption_position": "bottom",
+    "caption_size": 72,
+    "hook_mode": "no_speech"
+  },
+  "thumbnails": {
+    "count": 5
+  },
+  "pack": {
+    "language": ""
+  },
+  "jobs": {
+    "last_operation": "inspection"
+  },
+  "ui": {
+    "inline_video_max_mb": 300
+  }
+}

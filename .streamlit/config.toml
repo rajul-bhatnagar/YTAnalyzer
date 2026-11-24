@@ -1,0 +1,12 @@
+[server]
+# Browser uploads are held in memory by Streamlit. For long recordings, copy the file into
+# 01_RAW_INPUT instead of uploading. The app also enforces its own size/disk checks.
+maxUploadSize = 2048
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#e0533d"
