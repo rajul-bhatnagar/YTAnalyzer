@@ -73,17 +73,70 @@ def _short(err: BaseException | str, limit: int = 400) -> str:
     return s[-limit:]
 
 
+def find_nvidia_smi() -> Path | None:
+    """nvidia-smi on PATH, else where NVIDIA drivers install it on Windows (System32 for current drivers, the old
+    NVSMI folder, or the driver store copy that DCH drivers keep)."""
+    import shutil  # noqa: PLC0415
+
+    found = shutil.which("nvidia-smi")
+    if found:
+        return Path(found)
+    if os.name != "nt":
+        return None
+    sysroot = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    progfiles = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    for p in (sysroot / "System32" / "nvidia-smi.exe", progfiles / "NVIDIA Corporation" / "NVSMI" / "nvidia-smi.exe"):
+        if p.exists():
+            return p
+    store = sysroot / "System32" / "DriverStore" / "FileRepository"
+    hits = sorted(store.glob("nv*.inf_amd64_*/nvidia-smi.exe"), key=lambda p: p.stat().st_mtime, reverse=True) \
+        if store.exists() else []
+    return hits[0] if hits else None
+
+
+_last_smi_problem: str | None = None
+
+
 def query_nvidia_smi() -> list[GpuInfo] | None:
+    """GPUs reported by nvidia-smi, or None. The reason for a None is kept in ``nvidia_smi_problem()``."""
+    global _last_smi_problem
+    exe = find_nvidia_smi()
+    if exe is None:
+        _last_smi_problem = ("nvidia-smi was not found (not on PATH, not in System32, NVSMI or the driver store): "
+                             "the NVIDIA driver is probably not installed.")
+        return None
     try:
         proc = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,driver_version,memory.total,memory.free", "--format=csv,noheader,nounits"],
+            [str(exe), "--query-gpu=name,driver_version,memory.total,memory.free", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=20, creationflags=_CREATE_NO_WINDOW,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    except (subprocess.TimeoutExpired, OSError) as e:
+        _last_smi_problem = f"{exe} could not run: {_short(e, 200)}"
         return None
     if proc.returncode != 0:
+        _last_smi_problem = f"{exe} failed (exit {proc.returncode}): {_short(proc.stdout + proc.stderr, 300)}"
         return None
+    _last_smi_problem = None
     return parse_nvidia_smi(proc.stdout)
+
+
+def nvidia_smi_problem() -> str | None:
+    return _last_smi_problem
+
+
+def windows_display_adapters() -> list[str]:
+    """Display adapters as Windows sees them (name, status, driver version). Shows whether an NVIDIA GPU exists
+    at all, even when its driver is missing or broken."""
+    if os.name != "nt":
+        return []
+    cmd = ("Get-CimInstance Win32_VideoController | ForEach-Object { \"$($_.Name) | status $($_.Status) | "
+           "driver $($_.DriverVersion) | error code $($_.ConfigManagerErrorCode)\" }")
+    try:
+        proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd], capture_output=True,
+                              text=True, timeout=30, creationflags=_CREATE_NO_WINDOW)
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
 
 
 def parse_nvidia_smi(text: str) -> list[GpuInfo]:
@@ -196,6 +249,14 @@ def detect(run_whisper_smoke: bool = False, whisper_model: str = "tiny") -> Hard
     gpus = query_nvidia_smi()
     r.nvidia_smi_found = gpus is not None and len(gpus) > 0
     r.gpus = gpus or []
+    if not r.nvidia_smi_found:
+        r.notes.append(nvidia_smi_problem() or "nvidia-smi reported no GPU.")
+        adapters = windows_display_adapters()
+        if adapters:
+            r.notes.append("Display adapters seen by Windows: " + " ; ".join(adapters))
+        if any("nvidia" in a.lower() for a in adapters):
+            r.notes.append("Windows sees an NVIDIA adapter, but nvidia-smi does not work: install or repair the "
+                           "NVIDIA driver (NVIDIA App or nvidia.com), restart, then run diagnostics again.")
 
     try:
         r.ffmpeg_version = fx.version_line()
