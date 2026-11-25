@@ -166,11 +166,18 @@ def nvenc_encode_test() -> tuple[bool, str | None]:
         return False, _short(e)
 
 
+_dll_dirs_done: list[str] | None = None
+
+
 def register_nvidia_dll_dirs() -> list[str]:
     """Make pip-installed NVIDIA runtime DLLs (nvidia-cublas-cu12, nvidia-cudnn-cu12) loadable on Windows.
 
-    STATUS: unverified on hardware. Harmless when the packages are absent.
+    Must run in every process that loads CUDA (the app, not only the diagnostics script). Verified on the RTX 4050
+    laptop. Harmless when the packages are absent.
     """
+    global _dll_dirs_done
+    if _dll_dirs_done is not None:
+        return list(_dll_dirs_done)  # once per process: os.add_dll_directory/PATH must not grow on every call
     if os.name != "nt":
         return []
     found: list[str] = []
@@ -187,6 +194,7 @@ def register_nvidia_dll_dirs() -> list[str]:
                     continue
                 os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
                 found.append(str(bin_dir))
+    _dll_dirs_done = list(found)
     return found
 
 

@@ -148,6 +148,12 @@ def _run(wav: Path, model_name: str, device: str, compute: str, language: str, v
         raise RuntimeError(
             f"Whisper model '{model_name}' is not downloaded yet (about {MODEL_INFO.get(model_name, {}).get('download_mb', '?')} MB). "
             "Allow the download on the Transcript page, or pick a model that is already available.")
+    if device == "cuda":
+        # pip-installed cuBLAS/cuDNN DLLs live under .venv/Lib/site-packages/nvidia/*/bin; this process must
+        # register them first,
+        # otherwise CTranslate2 fails with 'cublas64_12.dll is not found' (seen on the RTX laptop).
+        from .hardware import register_nvidia_dll_dirs  # noqa: PLC0415
+        register_nvidia_dll_dirs()
     model = WhisperModel(model_name, device=device, compute_type=compute, local_files_only=not allow_download)
     try:
         lang = LANG_CODES.get(language)
