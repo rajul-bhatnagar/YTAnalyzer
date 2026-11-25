@@ -293,3 +293,22 @@ def test_ollama_text_model_refuses_images_and_never_pulls():
         p.generate_json("s", "p", {}, images=[ImageInput(b"x", "f")])
     assert p.status().ok and "text-only" in p.status().message
     assert "/api/pull" not in seen
+
+
+def test_cloud_retries_wait_longer_and_report_progress():
+    from types import SimpleNamespace
+    cloud = ga.ProviderSlot(SimpleNamespace(cloud=True, name="gemini", model="m"), "images")
+    local = ga.ProviderSlot(SimpleNamespace(cloud=False, name="ollama", model="m"), "text")
+    assert ga.retry_delays(cloud, {}) == (30.0, 60.0, 120.0)
+    assert ga.retry_delays(cloud, {"retry_delays_sec": [1, 2]}) == (1.0, 2.0)
+    assert ga.retry_delays(local, {"retry_delays_sec": [1, 2]}) == ga.LOCAL_RETRY_DELAYS
+    calls, slept, notes = [], [], []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise ProviderError("Gemini server error (HTTP 503): overloaded", transient=True)
+        return "ok"
+    assert ga._with_retries(flaky, slept.append, lambda: False, (30.0, 60.0, 120.0), notes.append) == "ok"
+    assert len(calls) == 3 and sum(slept) == 90.0
+    assert "Retrying in 30 s (attempt 2 of 4)" in notes[0] and "attempt 3 of 4" in notes[1]

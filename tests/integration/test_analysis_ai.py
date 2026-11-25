@@ -270,8 +270,9 @@ def test_failed_windows_are_retried_on_the_next_run(setup):
     must not be reused just because its inputs are unchanged), and finished windows must not be re-requested."""
     svc, pid, fake, _ = setup
     svc.grant_cloud_consent(pid, "frames")
-    svc.save_project_settings(pid, {"ai.ollama_model": ""})  # no fallback: the failures must surface
-    fake.script = ["503"] * 6  # 2 windows x 3 attempts
+    svc.save_project_settings(pid, {"ai.ollama_model": "",  # no fallback: the failures must surface
+                                    "ai.retry_delays_sec": [0, 0, 0]})  # 4 attempts per window, no waiting in tests
+    fake.script = ["503"] * 8  # 2 windows x 4 attempts
     job, j = _run(svc, pid)
     assert j["state"] == "HIGHLIGHT_REVIEW", j["error_summary"]
     assert [w["status"] for w in svc.ai_report(pid)["windows"]] == ["failed", "failed"]

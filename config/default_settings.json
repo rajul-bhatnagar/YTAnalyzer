@@ -40,7 +40,8 @@
     "min_request_interval_sec": 4.0,
     "request_timeout_sec": 300,
     "temperature": 0.2,
-    "max_frames_per_request": 16
+    "max_frames_per_request": 16,
+    "retry_delays_sec": [30, 60, 120]
   },
   "audio": {
     "mode": "game_only",

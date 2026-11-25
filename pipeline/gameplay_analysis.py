@@ -323,8 +323,9 @@ def analyse_windows(evidence: list[WindowEvidence], plan: ProviderPlan, cache_di
         if pause_check():
             raise StagePaused("Paused by you. Finished windows are kept; Resume continues from here.")
         progress(n / max(len(evidence), 1), f"Analysing window {n + 1} of {len(evidence)} with {plan.describe()}")
+        frac = n / max(len(evidence), 1)
         entry = _analyse_one(ev, plan, cache_dir, duration, resolve, cfg, budget, cancel_check,
-                             video_windows or set(), video_chunk, sleep)
+                             video_windows or set(), video_chunk, sleep, lambda msg, f=frac: progress(f, msg))
         report["windows"].append(entry)
     report["requests"] = budget.used
     report["effective"] = sorted({f"{w['provider']}:{w['model']} ({w['mode']})" for w in report["windows"]
@@ -335,7 +336,8 @@ def analyse_windows(evidence: list[WindowEvidence], plan: ProviderPlan, cache_di
 def _analyse_one(ev: WindowEvidence, plan: ProviderPlan, cache_dir: Path, duration: float,
                  resolve: Callable[[str], Path], cfg: dict[str, Any], budget: Budget,
                  cancel_check: Callable[[], bool], video_windows: set[int],
-                 video_chunk: Callable[[Window], Path] | None, sleep: Callable[[float], None]) -> dict[str, Any]:
+                 video_chunk: Callable[[Window], Path] | None, sleep: Callable[[float], None],
+                 notify: Callable[[str], None] | None = None) -> dict[str, Any]:
     w = ev.window
     path = cache_dir / f"w{w.idx:04d}.json"
     while True:
@@ -355,7 +357,9 @@ def _analyse_one(ev: WindowEvidence, plan: ProviderPlan, cache_dir: Path, durati
             plan.drop_to_signals(f"the request limit for one job ({budget.max_requests}) was reached")
             continue
         try:
-            raw, shown, prompt = _with_retries(lambda: _call(slot, ev, resolve, cfg, video_chunk), sleep, cancel_check)
+            raw, shown, prompt = _with_retries(
+                lambda: _call(slot, ev, resolve, cfg, video_chunk), sleep, cancel_check, retry_delays(slot, cfg),
+                (lambda msg: notify(f"Window {w.idx + 1}: {msg}")) if notify else None)
             issues: list[str] = []
             try:
                 wa, issues = validate_result(raw, ev, slot.mode, shown, duration)
@@ -410,14 +414,28 @@ def _sleep_cancellable(sec: float, sleep: Callable[[float], None], cancel_check:
         left -= 1.0
 
 
+LOCAL_RETRY_DELAYS = (5.0, 20.0)
+
+
+def retry_delays(slot: ProviderSlot, cfg: dict[str, Any]) -> tuple[float, ...]:
+    """Cloud overload (e.g. Gemini HTTP 503) usually clears within minutes, so cloud retries wait longer
+    (configurable). A local timeout does not improve by waiting, so local retries stay short."""
+    if slot.provider.cloud:
+        return tuple(float(x) for x in cfg.get("retry_delays_sec") or (30, 60, 120))
+    return LOCAL_RETRY_DELAYS
+
+
 def _with_retries(fn: Callable[[], Any], sleep: Callable[[float], None], cancel_check: Callable[[], bool],
-                  delays: tuple[float, ...] = (5.0, 20.0)) -> Any:
+                  delays: tuple[float, ...] = LOCAL_RETRY_DELAYS,
+                  notify: Callable[[str], None] | None = None) -> Any:
     for attempt in range(len(delays) + 1):
         try:
             return fn()
         except ProviderError as e:
             if not e.transient or isinstance(e, (QuotaExceeded, ProviderUnavailable)) or attempt == len(delays):
                 raise
+            if notify:
+                notify(f"{str(e)[:120]} Retrying in {delays[attempt]:.0f} s (attempt {attempt + 2} of {len(delays) + 1}).")
             _sleep_cancellable(delays[attempt], sleep, cancel_check)
     raise AssertionError("unreachable")
 
