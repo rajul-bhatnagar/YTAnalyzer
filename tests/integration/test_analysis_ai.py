@@ -83,6 +83,9 @@ class FakeGenai:
             raise genai_errors.ClientError(429, {"error": {"code": 429, "message": "Resource exhausted",
                                                            "status": "RESOURCE_EXHAUSTED",
                                                            "details": [{"retryDelay": "3600s"}]}})
+        if action == "503":
+            raise genai_errors.ServerError(503, {"error": {"code": 503, "message": "The model is overloaded.",
+                                                           "status": "UNAVAILABLE"}})
         if action == "bad_json":
             return SimpleNamespace(text="{not json", candidates=[])
         w0 = float(re.search(r"\(([\d.]+)-([\d.]+) s of the recording\)", prompt).group(1))
@@ -260,3 +263,26 @@ def test_text_only_ollama_cannot_claim_visuals(setup):
     assert ev["factors"]["visual_clarity"] == 0 and "could not see" in ev["uncertainty"]
     warns = [w for s in svc.job_stages(job) if s["stage_name"] == "ai_windows" for w in s["warnings"]]
     assert any("text-only" in w for w in warns)
+
+
+def test_failed_windows_are_retried_on_the_next_run(setup):
+    """Gemini 503 on every request -> windows fail. Running the analysis again must really retry them (the stage
+    must not be reused just because its inputs are unchanged), and finished windows must not be re-requested."""
+    svc, pid, fake, _ = setup
+    svc.grant_cloud_consent(pid, "frames")
+    svc.save_project_settings(pid, {"ai.ollama_model": ""})  # no fallback: the failures must surface
+    fake.script = ["503"] * 6  # 2 windows x 3 attempts
+    job, j = _run(svc, pid)
+    assert j["state"] == "HIGHLIGHT_REVIEW", j["error_summary"]
+    assert [w["status"] for w in svc.ai_report(pid)["windows"]] == ["failed", "failed"]
+    attempts = {s["stage_name"]: s["attempt_count"] for s in svc.job_stages(job)}
+    calls = len(fake.calls)
+    job2, j2 = _run(svc, pid)
+    assert j2["state"] == "HIGHLIGHT_REVIEW", j2["error_summary"]
+    assert len(fake.calls) == calls + 2  # both windows requested again, once each
+    assert [w["status"] for w in svc.ai_report(pid)["windows"]] == ["ok", "ok"]
+    st = {s["stage_name"]: s["attempt_count"] for s in svc.job_stages(job2)}
+    assert st["ai_windows"] == attempts["ai_windows"] + 1 and st["frames"] == attempts["frames"]
+    # A third run with everything finished reuses the stage and sends nothing.
+    _run(svc, pid)
+    assert len(fake.calls) == calls + 2

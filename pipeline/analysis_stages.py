@@ -149,8 +149,13 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
     # --- ai_windows ---------------------------------------------------------------------------
     def ai_inputs(ctx):
         plan_desc = ctx.data.get("plan_descriptor", {"provider": "none"})
+        # Windows that failed (e.g. Gemini 503) or gave unusable output are unfinished work: they force this stage to
+        # run again. Windows that succeeded come from their cache, so nothing is requested twice.
+        prev = _read_json(f.ai_report, {}) or {}
+        unfinished = [w["window"] for w in prev.get("windows", []) if w.get("status") in ("failed", "invalid")]
+        retry = {"retry_after": prev.get("run_id"), "windows": unfinished} if unfinished and plan_desc["provider"] != "none"             else None
         return [_fp(f.frames_index), _fp(f.signal_events), _fp(f.words_json)], {
-            "plan": plan_desc, "context": context, "prompt": gameplay_analysis.PROMPT_VERSION,
+            "plan": plan_desc, "context": context, "prompt": gameplay_analysis.PROMPT_VERSION, "retry": retry,
             "cfg": {k: ai_cfg[k] for k in ("max_frames_per_request", "temperature", "gemini_video_max_windows")}}
 
     def ai_exec(ctx: StageContext) -> StageResult:
@@ -183,6 +188,7 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
             for chunk in f.video_chunks_dir.glob("*.mp4") if f.video_chunks_dir.exists() else []:
                 chunk.unlink(missing_ok=True)
         report["plan_notes"] = ctx.data.get("plan_notes", [])
+        report["run_id"] = uuid.uuid4().hex[:10]
         report["started_with"] = ctx.data.get("plan_descriptor")
         cleanup = []
         for slot in (plan.primary, plan.fallback):
