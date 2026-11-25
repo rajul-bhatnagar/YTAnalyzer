@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from . import ffmpeg_tools as fx
 from .audio_prep import audio_stats
-from .media_probe import decode_check, probe
+from .media_probe import video_seek_shift, decode_check, probe
 from .models import MediaInfo
 
 COPYABLE_TO_MP4 = {"h264", "hevc", "av1", "mpeg4", "vp9"}
@@ -50,16 +50,18 @@ def build_render_args(source: Path, mix_wav: Path, info: MediaInfo, ranges: list
                       out: Path, encoder: str, quality: str, audio_bitrate_k: int, graph_file: Path) -> list[str]:
     full = len(ranges) == 1 and ranges[0][0] <= 0.001 and abs(ranges[0][1] - info.duration_sec) <= 0.05
     v = info.video
+    shift = video_seek_shift(info)  # mix audio starts at the first VIDEO frame; the file may start earlier
     a_args = ["-c:a", "aac", "-b:a", f"{audio_bitrate_k}k", "-ar", "48000", "-ac", "2"]
     if full and v and v.codec in COPYABLE_TO_MP4:
-        return ["-y", "-i", str(source), "-i", str(mix_wav), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+        return ["-y", "-i", str(source), *(["-itsoffset", f"{shift:.6f}"] if shift else []), "-i", str(mix_wav),
+                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
                 *a_args, "-movflags", "+faststart", "-t", f"{info.duration_sec:.6f}", str(out)]
     parts = []
     n = len(ranges)
     parts.append(f"[0:v:0]split={n}" + "".join(f"[vs{i}]" for i in range(n)) if n > 1 else "[0:v:0]null[vs0]")
     parts.append(f"[1:a:0]asplit={n}" + "".join(f"[as{i}]" for i in range(n)) if n > 1 else "[1:a:0]anull[as0]")
     for i, (s, e) in enumerate(ranges):
-        parts.append(f"[vs{i}]trim=start={s:.6f}:end={e:.6f},setpts=PTS-STARTPTS[v{i}]")
+        parts.append(f"[vs{i}]trim=start={s + shift:.6f}:end={e + shift:.6f},setpts=PTS-STARTPTS[v{i}]")
         parts.append(f"[as{i}]atrim=start={s:.6f}:end={e:.6f},asetpts=PTS-STARTPTS[a{i}]")
     parts.append("".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[vout][aout]")
     graph_file.parent.mkdir(parents=True, exist_ok=True)

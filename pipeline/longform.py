@@ -184,6 +184,10 @@ class ProjectFiles:
         return self.analysis_dir / "ai_report.json"
 
     @property
+    def hud_ocr(self) -> Path:
+        return self.analysis_dir / "hud_ocr.json"
+
+    @property
     def fused_events(self) -> Path:
         return self.analysis_dir / "fused_events.json"
 
@@ -265,6 +269,12 @@ class LongformContext:
         self.tracks = [dict(r) for r in db.query(
             "SELECT * FROM audio_tracks WHERE project_id = ? ORDER BY audio_index", (project["id"],))]
         self.duration = self.info.duration_sec
+
+    @property
+    def video_shift(self) -> float:
+        """See media_probe.video_seek_shift: add to every seek into the source video."""
+        from .media_probe import video_seek_shift  # noqa: PLC0415
+        return video_seek_shift(self.info)
 
     # --- tracks / sources -------------------------------------------------------------
     def role_tracks(self) -> dict[str, int]:
@@ -451,6 +461,10 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
             return StageResult(manifest=[manifest_entry(f.transcript_raw, paths.root, "transcribe", {"ok": True})],
                                warnings=["No speech track to transcribe (no mic, voiceover or combined track)."])
         ch = tr_choice()
+        ai = settings.get("ai", {})
+        if ch.device == "cuda" and ai.get("ollama_model"):  # 6 GB GPU: an idle Ollama model must not hold the VRAM
+            from .ai_providers.ollama_provider import OllamaProvider  # noqa: PLC0415
+            OllamaProvider(ai.get("ollama_base_url", ""), ai["ollama_model"]).unload()
         result = transcribe.transcribe_file(
             wav, ch, project["language"], bool(w_cfg["vad_filter"]), int(w_cfg["beam_size"]),
             bool(w_cfg.get("allow_download")), float(w_cfg["uncertain_word_probability"]),
@@ -604,7 +618,8 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
         if lc.info.vfr_measured:
             warnings.append("Source has variable frame rate; editor timecodes are approximate.")
         if settings["timeline"]["export_edl"]:
-            text = timeline_export.build_edl(project["name"], tl["clips"], fps, lc.source.name, mix.name)
+            text = timeline_export.build_edl(project["name"], tl["clips"], fps, lc.source.name, mix.name,
+                                             timeline_export.fcp_pathurl(lc.source), timeline_export.fcp_pathurl(mix))
             if len(timeline_export.parse_edl(text)) != 2 * len(tl["clips"]):
                 raise ValueError("EDL self-check failed")
             f.edl.write_text(text, encoding="utf-8")

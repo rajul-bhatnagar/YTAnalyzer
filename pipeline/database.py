@@ -191,6 +191,10 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         )""",
         "CREATE INDEX idx_shorts_project ON shorts(project_id)",
     ]),
+    # Upgrade: the clip's outcome mood drives the thumbnail look; empty for highlights made before it existed.
+    (4, [
+        "ALTER TABLE highlights ADD COLUMN outcome_mood TEXT NOT NULL DEFAULT ''",
+    ]),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]

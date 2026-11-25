@@ -173,9 +173,10 @@ def sidebar_quick_settings(svc: StudioService) -> None:
         gv = st.slider("Game volume (dB)", -40.0, 12.0, float(s["audio"]["game_volume_db"]), 0.5)
         silence = st.selectbox("Inactive-scene cutting", ["none", "conservative"],
                                index=["none", "conservative"].index(s["silence"]["policy"]))
-        lays = list(LAYOUTS)
+        lays = ["", *LAYOUTS]
         lay = st.selectbox("Default Shorts layout", lays, index=lays.index(s["shorts"]["layout"])
-                           if s["shorts"]["layout"] in lays else 0, format_func=LAYOUTS.get)
+                           if s["shorts"]["layout"] in lays else 0,
+                           format_func=lambda k: "From style profile" if k == "" else LAYOUTS[k])
         cap = st.checkbox("Captions on new Shorts", bool(s["shorts"]["captions_enabled"]))
         if st.form_submit_button("Save"):
             try:

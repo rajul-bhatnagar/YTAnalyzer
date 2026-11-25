@@ -111,12 +111,12 @@ class FrameInfo:
         return asdict(self)
 
 
-def extract_frame(source: Path, t: float, out: Path, width: int) -> bool:
+def extract_frame(source: Path, t: float, out: Path, width: int, shift: float = 0.0) -> bool:
     """Exact-seek single frame (-ss before -i seeks by timestamp, then decodes to the exact frame)."""
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + ".partial.jpg")
     try:
-        fx.ffmpeg(["-y", "-ss", f"{t:.3f}", "-i", str(source), "-map", "0:v:0", "-frames:v", "1",
+        fx.ffmpeg(["-y", "-ss", f"{t + shift:.3f}", "-i", str(source), "-map", "0:v:0", "-frames:v", "1",
                    "-vf", f"scale={width}:-2:flags=bicubic", "-q:v", "3", str(tmp)], timeout=120)
     except fx.FFmpegError:
         tmp.unlink(missing_ok=True)
@@ -141,14 +141,15 @@ def measure(path: Path) -> tuple[float, float, np.ndarray]:
 
 
 def sample_window(source: Path, frames_dir: Path, window_idx: int, times: list[tuple[float, str]], width: int,
-                  to_stored: Callable[[Path], str], cancel_check: Callable[[], bool] | None = None) -> list[FrameInfo]:
+                  to_stored: Callable[[Path], str], cancel_check: Callable[[], bool] | None = None,
+                  shift: float = 0.0) -> list[FrameInfo]:
     out: list[FrameInfo] = []
     prev: tuple[float, np.ndarray] | None = None
     for t, reason in times:
         if cancel_check and cancel_check():
             raise Cancelled("Cancelled during frame extraction")
         p = frames_dir / f"w{window_idx:04d}_{int(round(t * 1000)):09d}.jpg"
-        if not p.exists() and not extract_frame(source, t, p, width):
+        if not p.exists() and not extract_frame(source, t, p, width, shift):
             continue
         sharp, bright, thumb = measure(p)
         fi = FrameInfo(t=t, path=to_stored(p), reason=reason, window=window_idx, sharpness=round(sharp, 1),

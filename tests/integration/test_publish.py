@@ -60,7 +60,7 @@ def ready(studio_paths, media):
     svc.start_inspection(pid)
     assert svc.runner.wait_idle(120)
     svc.save_track_roles(pid, {0: TrackRole.COMBINED_MIX, 1: TrackRole.GAME, 2: TrackRole.MIC})
-    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45, "ai.provider": "none",
+    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45, "analysis.window_overlap_sec": 0, "ai.provider": "none",
                                     "shorts.quality": "fast"})
     svc.start_analysis(pid)
     assert svc.runner.wait_idle(600)

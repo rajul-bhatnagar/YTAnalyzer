@@ -6,7 +6,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from . import captions, content_stages, shorts_builder, thumbnail_prep
+from . import (audio_prep, captions, content_stages, short_factcheck, shorts_builder, style_profiles,
+               thumbnail_prep)
 from . import youtube_metadata as ym
 from .database import from_json, utcnow
 from .ffmpeg_tools import Cancelled
@@ -17,7 +18,7 @@ from .models import JobState
 if TYPE_CHECKING:  # pragma: no cover
     from .project_service import StudioService
 
-CONTENT_TARGETS = {"shorts": JobState.SHORTS_RENDER, "assets": JobState.ASSET_PREP,
+CONTENT_TARGETS = {"voiceover": JobState.SHORTS_RENDER, "shorts": JobState.SHORTS_RENDER, "assets": JobState.ASSET_PREP,
                    "thumbnails": JobState.ASSET_PREP, "pack": JobState.ASSET_PREP}
 SHORT_STATUSES = ("pending", "approved", "rejected")
 _read_json, _write_json = content_stages._read_json, content_stages._write_json
@@ -33,7 +34,7 @@ class ContentServiceMixin:
         if target not in CONTENT_TARGETS:
             raise ValueError(f"Unknown operation '{target}'")
         self.check_disk_for_job()
-        if target == "shorts" and not content_stages.approved_highlights(self.db, project_id):
+        if target in ("shorts", "voiceover") and not content_stages.approved_highlights(self.db, project_id):
             raise ValueError("Approve at least one highlight first (Analysis & highlights page).")
         job = self.jobs.latest_job(project_id)
         job_id = self.jobs.create_job(project_id) if job is None or JobState(job["state"]) == JobState.CANCELLED \
@@ -75,7 +76,8 @@ class ContentServiceMixin:
                 if res.failed_optional:
                     failed.append(spec.name)
             shorts_failed = [n for n in failed if n.startswith("short_h")]
-            note = {"shorts": "Shorts rendered and validated.", "assets": "Thumbnails and creator package ready.",
+            note = {"voiceover": "Voiceover applied: mix, transcript, Shorts and package updated.",
+                    "shorts": "Shorts rendered and validated.", "assets": "Thumbnails and creator package ready.",
                     "thumbnails": "Thumbnail frames and prompts ready.", "pack": "Creator package ready."}[target]
             if shorts_failed:
                 note = f"{len(shorts_failed)} Short(s) failed; the others are ready. See the Shorts page."
@@ -108,7 +110,9 @@ class ContentServiceMixin:
 
     def short_settings(self: "StudioService", highlight_id: int) -> shorts_builder.ShortSettings:
         h = self.get_highlight(highlight_id)
-        return content_stages.short_settings(self.db, highlight_id, self.effective_settings(h["project_id"]))
+        proj = self.get_project(h["project_id"])
+        return content_stages.short_settings(self.db, highlight_id, self.effective_settings(h["project_id"]),
+                                             proj["content_style"])
 
     def save_short_settings(self: "StudioService", highlight_id: int, s: shorts_builder.ShortSettings) -> None:
         h = self._approved(highlight_id)
@@ -126,7 +130,7 @@ class ContentServiceMixin:
                          (highlight_id, h["project_id"], s.model_dump_json(), utcnow()))
 
     def short_preview_frame(self: "StudioService", highlight_id: int, at: float,
-                            s: shorts_builder.ShortSettings | None = None) -> Path:
+                            s: shorts_builder.ShortSettings | None = None, safe_zone: bool = False) -> Path:
         """Framing preview (one 1080x1920 frame, with captions) before committing to a full render."""
         h = self._approved(highlight_id)
         lc = self.longform_context(h["project_id"])
@@ -140,7 +144,58 @@ class ContentServiceMixin:
             raise ValueError("The recording has no video stream.")
         work = lc.files.short_work(highlight_id) / "preview"
         out = work / f"frame_{s.layout}_{int(at * 1000)}.png"
-        return shorts_builder.preview_frame(lc.source, h["eff_start"], h["eff_end"], at, s, size, work, ass, out)
+        png = shorts_builder.preview_frame(lc.source, h["eff_start"], h["eff_end"], at, s, size, work, ass, out,
+                                           shift=lc.video_shift)
+        return shorts_builder.safe_zone_overlay(png, out.with_name(out.stem + "_safe.png")) if safe_zone else png
+
+    def style_profile(self: "StudioService", project_id: str) -> style_profiles.StyleProfile:
+        """The project's content-style profile with its overrides applied."""
+        return style_profiles.resolve(self.get_project(project_id)["content_style"],
+                                      self.effective_settings(project_id))
+
+    def short_fact_check(self: "StudioService", highlight_id: int) -> dict[str, Any]:
+        """Hook caption and title checked against the evidence inside this Short's clip (see short_factcheck)."""
+        h = self.get_highlight(highlight_id)
+        proj = self.get_project(h["project_id"])
+        f = self.files(h["project_id"])
+        ev = short_factcheck.gather_evidence(self.db, h["project_id"], content_stages.words_video_time(f), f.hud_ocr,
+                                             proj["game_name"], h["eff_start"], h["eff_end"])
+        return short_factcheck.check_short(h["hook_caption"] or "", h["suggested_title"] or "", ev)
+
+    def set_short_voiceover(self: "StudioService", highlight_id: int, stream: BinaryIO, filename: str) -> Path:
+        """A voiceover for this Short only (mixed over its game audio when it renders)."""
+        self._approved(highlight_id)
+        h = self.get_highlight(highlight_id)
+        d = self.files(h["project_id"]).short_work(highlight_id) / "voice"
+        d.mkdir(parents=True, exist_ok=True)
+        version = len(list(d.glob("voiceover_v*_original.*"))) + 1
+        upload = d / f"upload_v{version}{Path(filename).suffix.lower()}"
+        with upload.open("wb") as out:
+            shutil.copyfileobj(stream, out, 4 * 1024 * 1024)
+        try:
+            res = audio_prep.import_voiceover(upload, d, version)
+        finally:
+            upload.unlink(missing_ok=True)
+        s = self.short_settings(highlight_id).model_copy(update={"voice_file": self.paths.to_stored(res["wav"])})
+        self.save_short_settings(highlight_id, s)
+        return res["wav"]
+
+    def clear_short_voiceover(self: "StudioService", highlight_id: int) -> None:
+        self.save_short_settings(highlight_id, self.short_settings(highlight_id).model_copy(update={"voice_file": ""}))
+
+    def apply_voiceover(self: "StudioService", project_id: str, offset_sec: float) -> str:
+        """Quick loop after recording a whole-video voiceover: use it as the voice, duck the game under it, transcribe
+        it, then re-mix (with loudness normalisation), re-render the approved Shorts and update the package.
+        Import, inspection, track mapping, analysis and highlights are not repeated."""
+        lc = self.longform_context(project_id)
+        if lc.voiceover_wav() is None:
+            raise ValueError("Upload or record a voiceover first.")
+        has_game = any(r in lc.role_tracks() for r in ("game", "combined_mix"))
+        self.save_project_settings(project_id, {
+            "audio.voice_source": "voiceover", "audio.voice_offset_sec": float(offset_sec),
+            "audio.mode": "both_auto_duck" if has_game else "voice_only", "audio.loudnorm_enabled": True,
+            "transcription.source": "voiceover"})
+        return self.start_content(project_id, "voiceover")
 
     def short_output(self: "StudioService", highlight_id: int) -> dict[str, Any] | None:
         row = self.db.query_one("SELECT * FROM rendered_outputs WHERE output_type = 'short' AND highlight_id = ? "
@@ -218,14 +273,31 @@ class ContentServiceMixin:
         preview = thumbnail_prep.safe_area_preview(final, d / "_preview_safe_area.png")
         return {"path": final, "preview": preview, "warnings": warnings, "info": info}
 
-    def user_thumbnail(self: "StudioService", project_id: str) -> dict[str, Any] | None:
+    def user_thumbnail(self: "StudioService", project_id: str, badge: bool = False) -> dict[str, Any] | None:
+        """The imported/composed thumbnail with a safe-area preview: the timestamp area outlined, or (``badge``) a
+        mock video-length badge drawn where YouTube puts it."""
         d = self.files(project_id).user_thumbnail_dir
         found = sorted(d.glob("thumbnail_user.*")) if d.exists() else []
         if not found:
             return None
         _e, warnings, info = thumbnail_prep.validate_user_thumbnail(found[0])
-        prev = d / "_preview_safe_area.png"
-        return {"path": found[0], "preview": prev if prev.exists() else None, "warnings": warnings, "info": info}
+        prev = thumbnail_prep.safe_area_preview(found[0], d / ("_preview_badge.png" if badge else
+                                                               "_preview_safe_area.png"), badge=badge)
+        return {"path": found[0], "preview": prev, "warnings": warnings, "info": info}
+
+    def compose_thumbnail(self: "StudioService", project_id: str, image: Path, words: str, mood: str) -> dict[str, Any]:
+        """2-3 bold words on a frame or on your Gemini image, saved as the project's thumbnail (old one backed up)."""
+        f = self.files(project_id)
+        allowed = (f.thumbs_dir, f.user_thumbnail_dir, f.user_thumbnail_dir / "_previous")
+        if not image.exists() or image.parent not in allowed:
+            raise ValueError("Choose one of the prepared frames or your imported image.")
+        tmp = f.user_thumbnail_dir / "_composed.png"
+        thumbnail_prep.compose_thumbnail(image, words, mood, tmp)
+        try:
+            with tmp.open("rb") as fh:
+                return self.import_user_thumbnail(project_id, fh, "composed.png")
+        finally:
+            tmp.unlink(missing_ok=True)
 
     # --- creator package ----------------------------------------------------------------------------------------
     def creator_pack(self: "StudioService", project_id: str) -> dict[str, Any] | None:

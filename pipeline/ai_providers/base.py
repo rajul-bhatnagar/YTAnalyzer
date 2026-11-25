@@ -34,6 +34,11 @@ EVENT_CATEGORIES = {
 }
 
 
+# How a clip ENDS, which sets the thumbnail's look (never its facts).
+OUTCOME_MOODS = {"win_hype": "Win / hype", "clutch_tension": "Clutch / tension", "fail_shock": "Fail / shock",
+                 "funny_chaos": "Funny / chaos"}
+
+
 # --- structured outputs -------------------------------------------------------------------------
 class FactorRatings(BaseModel):
     """0 = absent / cannot judge, 5 = very strong. Ranking aids, not objective truth."""
@@ -71,6 +76,8 @@ class AIEvent(BaseModel):
     hook_caption: str = Field("", description="Short on-screen hook, max 8 words, must match what is shown",
                               max_length=80)
     suggested_title: str = Field("", description="Short honest title; no claims beyond the evidence", max_length=100)
+    outcome_mood: str = Field("", description="How the moment ends: win_hype, clutch_tension, fail_shock, funny_chaos; "
+                                              "'' if unclear")
 
 
 class WindowAnalysis(BaseModel):

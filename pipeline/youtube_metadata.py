@@ -60,7 +60,7 @@ class InvalidPack(ValueError):
 
 # --- evidence -----------------------------------------------------------------------------------------------
 def evidence_text(ctx: dict[str, Any]) -> str:
-    parts = [ctx["game"], ctx.get("topic", ""), *[x["text"] for x in ctx.get("transcript", [])]]
+    parts = [ctx["game"], ctx.get("topic", ""), *[x["text"] for x in ctx.get("transcript", [])], *ctx.get("ocr", [])]
     for e in ctx.get("events", []):
         parts.append(e["description"])
     for h in ctx.get("highlights", []):
@@ -254,6 +254,7 @@ def assemble(draft: PackDraft, ctx: dict[str, Any], source: dict[str, Any], issu
         if h.get("hook"):
             s["hook"] = h["hook"]
         s["start"], s["end"] = h["start"], h["end"]
+        s["outcome_mood"] = h.get("mood", "")
     pack["thumbnail_prompts"] = prompts or {}
     pack["source"] = source
     pack["language"] = ctx["language"]

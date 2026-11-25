@@ -7,10 +7,11 @@ from typing import Any
 
 import streamlit as st
 
-from pipeline import captions, content_stages, ffmpeg_tools, longform, timeline_builder
+from pipeline import captions, content_stages, ffmpeg_tools, longform, style_profiles, timeline_builder
 from pipeline.content_service import SHORT_STATUSES
 from pipeline.project_service import StudioService
 from pipeline.shorts_builder import LAYOUTS, ShortSettings
+from ui import voiceover_panel
 from ui.common import fmt_size, get_service, job_status_panel, require_project
 
 STATUS_ICON = {"pending": "⏳", "approved": "✅", "rejected": "🚫"}
@@ -48,15 +49,40 @@ def _settings_form(svc: StudioService, pid: str, h: dict[str, Any], s: ShortSett
                       format_func={"full": "Whole frame (all HUD visible)", "region": "A chosen region (e.g. a "
                                    "scoreboard)"}.get, key=_k(pid, f"bm_{hid}"), horizontal=True)
         upd["bottom_mode"] = bm
+        if bm == "full":
+            st.warning("With one recording (no facecam), the bottom half repeats the whole frame. Better: pick a "
+                       "region (e.g. a score strip, HUD or minimap), or use 'Full frame over blurred background'.")
         if bm == "region":
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             upd["region_x"] = c1.slider("Region left → right", 0.0, 1.0, s.region_x, 0.05, key=_k(pid, f"rx_{hid}"))
             upd["region_y"] = c2.slider("Region top → bottom", 0.0, 1.0, s.region_y, 0.05, key=_k(pid, f"ry_{hid}"))
-            upd["region_w"] = c3.slider("Region width", 0.1, 1.0, s.region_w, 0.05, key=_k(pid, f"rw_{hid}"))
+            upd["region_w"] = c1.slider("Region width", 0.1, 1.0, s.region_w, 0.05, key=_k(pid, f"rw_{hid}"))
+            upd["region_h"] = c2.slider("Region height", 0.05, 1.0, float(s.region_h if s.region_h is not None
+                                                                          else 0.25), 0.01, key=_k(pid, f"rh_{hid}"),
+                                        help="Any shape: a thin full-width strip suits a score bar.")
+            auto = st.checkbox("Size the bottom panel to the region automatically", s.split_ratio is None,
+                               key=_k(pid, f"auto_{hid}"))
+            upd["split_ratio"] = None if auto else st.slider(
+                "Top panel share of the height", 0.3, 0.9, float(s.split_ratio or 0.5), 0.05, key=_k(pid, f"sr_{hid}"))
     presets = list(timeline_builder.QUALITY_PRESETS)
     upd["quality"] = st.selectbox("Quality", presets, index=presets.index(s.quality) if s.quality in presets else 0,
                                   format_func=lambda p: timeline_builder.QUALITY_PRESETS[p]["label"],
                                   key=_k(pid, f"q_{hid}"))
+    prof = svc.style_profile(pid)
+    dm_keys = ["", "trim", "speedup", "none"]
+    dm_labels = {"": f"From style profile ({prof.shorts_dead_air_mode})", "trim": "Trim static lead-in and tail",
+                 "speedup": "Speed up static lead-in, trim tail", "none": "Leave as recorded"}
+    upd["dead_air"] = st.selectbox("Dead air", dm_keys, index=dm_keys.index(s.dead_air) if s.dead_air in dm_keys
+                                   else 0, format_func=dm_labels.get, key=_k(pid, f"dead_{hid}"),
+                                   help="Only this Short changes; the long video never does.")
+    if (upd["dead_air"] or prof.shorts_dead_air_mode) == "speedup":
+        upd["speedup_factor"] = st.slider("Speed-up", 2.0, 2.5, float(s.speedup_factor), 0.1, key=_k(pid, f"spd_{hid}"))
+    if s.voice_file:
+        v1, v2 = st.columns(2)
+        upd["voice_offset"] = v1.number_input("Voiceover starts at (s into the Short)", 0.0, 600.0,
+                                              float(s.voice_offset), 0.5, key=_k(pid, f"vof_{hid}"))
+        upd["voice_gain_db"] = v2.slider("Voiceover level (dB)", -20.0, 20.0, float(s.voice_gain_db), 0.5,
+                                         key=_k(pid, f"vg_{hid}"))
     with st.expander("Captions"):
         c = s.captions
         en = st.checkbox("Word-by-word captions (needs a transcript)", c.enabled, key=_k(pid, f"ce_{hid}"))
@@ -106,7 +132,8 @@ def _card(svc: StudioService, pid: str, h: dict[str, Any], dur: float, busy: boo
             if b1.button("Preview framing", key=_k(pid, f"pv_{hid}"), disabled=busy):
                 try:
                     with st.spinner("Rendering one frame..."):
-                        st.session_state[_k(pid, f"img_{hid}")] = str(svc.short_preview_frame(hid, at, new))
+                        st.session_state[_k(pid, f"img_{hid}")] = str(svc.short_preview_frame(
+                            hid, at, new, safe_zone=st.session_state.get(_k(pid, f"safe_{hid}"), True)))
                 except (ValueError, ffmpeg_tools.FFmpegError) as e:
                     st.error(str(e))
             changed_clip = abs(start - h["eff_start"]) > 1e-6 or abs(end - h["eff_end"]) > 1e-6 or \
@@ -116,6 +143,8 @@ def _card(svc: StudioService, pid: str, h: dict[str, Any], dur: float, busy: boo
             if b3.button("Save & render", type="primary", key=_k(pid, f"render_{hid}"), disabled=busy,
                          help="Renders this Short only; unchanged Shorts are not re-rendered."):
                 _save(svc, h, new, start, end, hook, changed_clip, render=True)
+            st.checkbox("Show the Shorts player's UI areas (bottom 22%, right 12%; approximate)", True,
+                        key=_k(pid, f"safe_{hid}"))
             img = st.session_state.get(_k(pid, f"img_{hid}"))
             if img:
                 st.image(img, caption="Framing preview (1080×1920)", width=270)
@@ -131,6 +160,32 @@ def _card(svc: StudioService, pid: str, h: dict[str, Any], dur: float, busy: boo
                     st.video(str(out["file"]))
                     st.caption(f"{fmt_size(out['file'].stat().st_size)} · {out['settings'].get('layout')} · "
                                f"{out['settings'].get('encoder')} · {out['created_at']}")
+            fc = svc.short_fact_check(hid)
+            if fc["ok"]:
+                st.caption("✅ Hook and title match the evidence inside this clip.")
+            for m in fc["messages"]:
+                st.warning(m)
+            for n, sug in enumerate(fc["suggestions"] if not fc["ok"] else []):
+                if st.button(f"Use hook: {sug}", key=_k(pid, f"sug_{hid}_{n}"), disabled=busy):
+                    svc.update_highlight(hid, hook=sug)
+                    st.rerun()
+            with st.expander("Voiceover for this Short"):
+                cur = new.voice_file
+                if cur:
+                    st.caption(f"Using: {cur.rsplit('/', 1)[-1]}")
+                vf = st.file_uploader("Upload", type=["wav", "mp3", "m4a", "flac", "ogg", "opus", "aac"],
+                                      key=_k(pid, f"svo_{hid}"), disabled=busy)
+                if vf is not None and st.button("Use for this Short", key=_k(pid, f"svo_use_{hid}"), disabled=busy):
+                    try:
+                        svc.set_short_voiceover(hid, vf, vf.name)
+                        st.rerun()
+                    except (ValueError, ffmpeg_tools.FFmpegError) as e:
+                        st.error(str(e))
+                if cur and st.button("Remove (use the project mix)", key=_k(pid, f"svo_rm_{hid}"), disabled=busy):
+                    svc.clear_short_voiceover(hid)
+                    st.rerun()
+                st.caption("Rendering mixes it over this clip's game sound (ducked), normalises loudness and "
+                           "transcribes it for captions. Adjust its start and level below, then Save & render.")
             notes = st.text_input("Notes", review["notes"], key=_k(pid, f"notes_{hid}"))
             a1, a2, a3 = st.columns(3)
             for col, label, status in ((a1, "Approve", "approved"), (a2, "Reject", "rejected"),
@@ -159,6 +214,32 @@ def _save(svc: StudioService, h: dict[str, Any], new: ShortSettings, start: floa
         st.error(str(e))
 
 
+def _style_panel(svc: StudioService, pid: str, busy: bool) -> None:
+    proj = svc.get_project(pid)
+    prof = svc.style_profile(pid)
+    s = svc.effective_settings(pid)
+    with st.expander(f"Style profile: {proj['content_style']}"):
+        st.caption(prof.note + " These are defaults for NEW Shorts; each Short can still be changed below.")
+        lay_keys = ["", *LAYOUTS]
+        lay = st.selectbox("Default layout", lay_keys, index=lay_keys.index(s["shorts"]["layout"])
+                           if s["shorts"]["layout"] in lay_keys else 0,
+                           format_func=lambda k: f"From profile ({LAYOUTS[prof.default_shorts_layout]})" if k == ""
+                           else LAYOUTS[k], key=_k(pid, "sp_lay"))
+        dm_keys = ["", *style_profiles.DEAD_AIR_MODES]
+        dm = st.selectbox("Default dead-air handling", dm_keys, index=dm_keys.index(s["shorts"]["dead_air_mode"])
+                          if s["shorts"]["dead_air_mode"] in dm_keys else 0,
+                          format_func=lambda k: f"From profile ({prof.shorts_dead_air_mode})" if k == ""
+                          else style_profiles.DEAD_AIR_MODES[k], key=_k(pid, "sp_dm"))
+        own = s["analysis"]["hud_ocr_weight"] is not None
+        use_own = st.checkbox(f"Override HUD-text weight (profile: {prof.hud_ocr_weight:g})", own, key=_k(pid, "sp_w_on"))
+        w = st.slider("HUD-text weight (0 = off)", 0.0, 1.0, float(prof.hud_ocr_weight), 0.1, key=_k(pid, "sp_w"),
+                      disabled=not use_own)
+        if st.button("Save style overrides", key=_k(pid, "sp_save"), disabled=busy):
+            svc.save_project_settings(pid, {"shorts.layout": lay, "shorts.dead_air_mode": dm,
+                                            "analysis.hud_ocr_weight": float(w) if use_own else None})
+            st.rerun()
+
+
 def render() -> None:
     svc = get_service()
     proj = require_project(svc)
@@ -172,6 +253,8 @@ def render() -> None:
     pid = proj["id"]
     job_status_panel(pid, {**longform.STAGE_LABELS}, "sh", include_content=True)
     busy = _busy(svc, pid)
+    _style_panel(svc, pid, busy)
+    voiceover_panel.render(svc, pid, "sh_vo", busy)
     hs = content_stages.approved_highlights(svc.db, pid)
     if not hs:
         st.info("No approved highlights yet. Approve candidates on **Analysis & highlights**; each approved highlight "

@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from pipeline import longform
+from pipeline import longform, thumbnail_prep
+from pipeline.ai_providers.base import OUTCOME_MOODS
 from pipeline.frame_sampler import fmt_ts
 from pipeline.project_service import StudioService
 from ui.common import get_service, job_status_panel, require_project
@@ -72,6 +73,40 @@ def _prompts(svc: StudioService, pid: str, data: dict) -> None:
             st.caption(f"Suggested text: {p['text'] or 'none'} (2–3 uppercase words at most).")
 
 
+def _compose(svc: StudioService, pid: str, data: dict | None, busy: bool) -> None:
+    st.subheader("Add title words (local, free)")
+    st.caption("Puts 2-3 bold uppercase words on a frame or on the image you made in Gemini, coloured by the clip's "
+               "outcome mood, keeping the bottom-right corner clear. Saved as your thumbnail; the previous one is kept.")
+    options: dict[str, Path] = {}
+    cur = svc.user_thumbnail(pid)
+    if cur:
+        options[f"Your imported image ({cur['path'].name})"] = cur["path"]
+    for fr in (data or {}).get("frames", []):
+        if fr["path"]:
+            options[f"Frame at {fmt_ts(fr['t'])}"] = fr["path"]
+    if not options:
+        st.caption("Prepare frames or import an image first.")
+        return
+    first = next(iter((data or {}).get("prompts", {}).values()), {})
+    src = st.selectbox("Image", list(options), key=_k(pid, "cmp_src"))
+    c1, c2 = st.columns(2)
+    words = c1.text_input("Words (2-3)", first.get("text", ""), key=_k(pid, "cmp_words"), placeholder="e.g. SUPER OVER WIN")
+    moods = ["", *OUTCOME_MOODS]
+    mood = c2.selectbox("Mood", moods, index=moods.index(first.get("mood", "")) if first.get("mood", "") in moods else 0,
+                        format_func=lambda m: OUTCOME_MOODS.get(m, "Neutral"), key=_k(pid, "cmp_mood"))
+    clean, problem = thumbnail_prep.validate_words(words)
+    if words and problem:
+        st.warning(problem)
+    if st.button("Compose thumbnail", type="primary", key=_k(pid, "cmp_go"), disabled=busy or clean is None):
+        try:
+            res = svc.compose_thumbnail(pid, options[src], clean or "", mood)
+            for w in res["warnings"]:
+                st.warning(w)
+            st.rerun()
+        except ValueError as e:
+            st.error(str(e))
+
+
 def _import(svc: StudioService, pid: str, busy: bool) -> None:
     st.subheader("Your finished thumbnail")
     cur = svc.user_thumbnail(pid)
@@ -85,11 +120,14 @@ def _import(svc: StudioService, pid: str, busy: bool) -> None:
             st.rerun()
         except ValueError as e:
             st.error(str(e))
+    badge = st.toggle("Preview with a YouTube video-length badge", True, key=_k(pid, "badge"))
+    cur = svc.user_thumbnail(pid, badge=badge) if cur else None
     if cur:
         c1, c2 = st.columns(2)
         c1.image(str(cur["path"]), caption=f"{cur['info'].get('width')}×{cur['info'].get('height')}")
         if cur["preview"]:
-            c2.image(str(cur["preview"]), caption="Red box: approximate area covered by YouTube's video length badge")
+            c2.image(str(cur["preview"]), caption="Mock '12:34' badge where YouTube shows the length (approximate)"
+                     if badge else "Red box: approximate area covered by YouTube's video length badge")
         for w in cur["warnings"]:
             st.warning(w)
 
@@ -119,4 +157,5 @@ def render() -> None:
     else:
         _frames(svc, pid, data, busy)
         _prompts(svc, pid, data)
+    _compose(svc, pid, data, busy)
     _import(svc, pid, busy)

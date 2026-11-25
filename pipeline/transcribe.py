@@ -87,6 +87,21 @@ def choose_model(whisper_cfg: dict[str, Any], cuda_verified: bool, free_vram_mb:
     return ModelChoice(requested, effective, device, compute, reason, warning)
 
 
+def free_gpu_memory() -> dict[str, Any]:
+    """Release GPU memory held by this process before another GPU user (e.g. a local Ollama vision model) runs.
+    faster-whisper models are already deleted after each transcription; this collects anything left and, if PyTorch
+    happens to be installed, empties its CUDA cache. Safe to call on CPU-only machines."""
+    done: dict[str, Any] = {"gc_objects": gc.collect()}
+    try:
+        import torch  # noqa: PLC0415 - optional, not a dependency of this app
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            done["torch_cache_cleared"] = True
+    except Exception:  # noqa: BLE001 - no torch or no CUDA: nothing more to free
+        pass
+    return done
+
+
 def _is_cuda_error(e: BaseException) -> bool:
     msg = f"{type(e).__name__} {e}".lower()
     return any(k in msg for k in _CUDA_ERRORS)

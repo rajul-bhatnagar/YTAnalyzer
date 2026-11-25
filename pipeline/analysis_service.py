@@ -6,7 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import analysis_stages, config, ffmpeg_tools, gameplay_analysis
+from . import analysis_stages, config, ffmpeg_tools, gameplay_analysis, transcribe
+from .ai_providers.base import OUTCOME_MOODS
 from .ai_providers.gemini_provider import GeminiProvider
 from .ai_providers.ollama_provider import OllamaProvider
 from .database import from_json, utcnow
@@ -161,6 +162,10 @@ class AnalysisServiceMixin:
                 plan, desc, notes = self.build_provider_plan(project_id, settings)
                 data.update(plan=plan, plan_descriptor=desc, plan_notes=notes)
             self.jobs.advance_to(job_id, JobState.ANALYZING)
+            plan = data.get("plan")
+            local = [sl for sl in ((plan.primary, plan.fallback) if plan else ()) if sl and sl.provider.name == "ollama"]
+            if any(sl.mode == "images" for sl in local):  # a local vision model is about to use the GPU
+                log.info("freeing GPU memory before local vision analysis: %s", transcribe.free_gpu_memory())
             failed_optional: set[str] = set()
             for spec in stages:
                 if self.jobs.is_pause_requested(job_id):
@@ -175,6 +180,8 @@ class AnalysisServiceMixin:
                 res = self.jobs.run_stage(spec, ctx, force=force)
                 if res.failed_optional:
                     failed_optional.add(spec.name)
+            for sl in local:  # hand the GPU back (e.g. to Whisper) once the local model is done
+                sl.provider.unload()
             self.jobs.advance_to(job_id, JobState.HIGHLIGHT_REVIEW)
             n = len(self.highlights(project_id, statuses=("suggested",)))
             note = f"{n} new highlight candidate(s) ready for review."
@@ -230,7 +237,8 @@ class AnalysisServiceMixin:
 
     def update_highlight(self: "StudioService", highlight_id: int, *, start: float | None = None,
                          end: float | None = None, status: str | None = None, notes: str | None = None,
-                         hook: str | None = None, title: str | None = None) -> dict[str, Any]:
+                         hook: str | None = None, title: str | None = None,
+                         mood: str | None = None) -> dict[str, Any]:
         h = self.get_highlight(highlight_id)
         proj = self.get_project(h["project_id"])
         dur = float(proj["duration_sec"] or 0)
@@ -243,10 +251,13 @@ class AnalysisServiceMixin:
             raise ValueError(f"A highlight longer than {float(cfg['max_sec']) * 3:.0f} s is not a Short.")
         if status is not None and status not in HIGHLIGHT_STATUSES:
             raise ValueError("Unknown status")
+        if mood is not None and mood not in ("", *OUTCOME_MOODS):
+            raise ValueError("Unknown outcome mood")
         sets = {"updated_at": utcnow()}
         if start is not None or end is not None:
             sets |= {"user_start_sec": new_s, "user_end_sec": new_e}
-        for col, val in (("status", status), ("user_notes", notes), ("hook_caption", hook), ("suggested_title", title)):
+        for col, val in (("status", status), ("user_notes", notes), ("hook_caption", hook), ("suggested_title", title),
+                         ("outcome_mood", mood)):
             if val is not None:
                 sets[col] = val.strip() if isinstance(val, str) and col != "status" else val
         cols = ", ".join(f"{k} = ?" for k in sets)
@@ -282,7 +293,7 @@ class AnalysisServiceMixin:
         tmp = out.with_name(out.stem + ".partial.mp4")
         ffmpeg_tools.ffmpeg(["-y", "-ss", f"{s:.3f}", "-t", f"{e - s:.3f}", "-i", str(self.source_path(proj)),
                              "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=-2:480", "-c:v", "libx264",
-                             "-preset", "veryfast", "-crf", "26", "-c:a", "aac", "-b:a", "128k",
+                             "-preset", "veryfast", "-crf", "26", "-c:a", "aac", "-b:a", "128k", "-ac", "2",
                              "-movflags", "+faststart", str(tmp)], timeout=600)
         tmp.replace(out)
         return out

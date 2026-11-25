@@ -1,7 +1,16 @@
 {
   "schema": 1,
   "import": {
-    "video_extensions": [".mp4", ".mkv", ".mov", ".avi", ".flv", ".ts", ".webm", ".m4v"],
+    "video_extensions": [
+      ".mp4",
+      ".mkv",
+      ".mov",
+      ".avi",
+      ".flv",
+      ".ts",
+      ".webm",
+      ".m4v"
+    ],
     "max_upload_mb": 2048,
     "min_free_disk_gb": 20,
     "full_checksum": true
@@ -41,7 +50,13 @@
     "request_timeout_sec": 300,
     "temperature": 0.2,
     "max_frames_per_request": 16,
-    "retry_delays_sec": [30, 60, 120]
+    "retry_delays_sec": [
+      30,
+      60,
+      120
+    ],
+    "max_ai_windows": 12,
+    "pinned_ranges": []
   },
   "audio": {
     "mode": "game_only",
@@ -91,7 +106,23 @@
     "scene_change_min": 12.0,
     "transient_min_db": 10.0,
     "voice_emphasis_min_db": 6.0,
-    "event_merge_gap_sec": 3.0
+    "event_merge_gap_sec": 3.0,
+    "window_overlap_sec": 30,
+    "hud_ocr_weight": null,
+    "hud_bands": [
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.18
+      ],
+      [
+        0.0,
+        0.82,
+        1.0,
+        0.18
+      ]
+    ]
   },
   "highlights": {
     "candidate_count": 3,
@@ -116,12 +147,14 @@
     "track_preview_seconds": 20
   },
   "shorts": {
-    "layout": "blur_fit",
+    "layout": "",
     "quality": "high",
     "captions_enabled": true,
     "caption_position": "bottom",
     "caption_size": 72,
-    "hook_mode": "no_speech"
+    "hook_mode": "no_speech",
+    "dead_air_mode": "",
+    "speedup_factor": 2.0
   },
   "thumbnails": {
     "count": 5

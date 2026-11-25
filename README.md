@@ -13,6 +13,33 @@ Local-first Windows 11 app that turns PC gameplay recordings into a reviewed You
 > - **Sidebar quick settings.**
 > - The migration guide, a diagnostics report from the dev PC (`docs/diagnostics_dev_pc.json`), and a sample project manifest made from synthetic media (`docs/sample_manifest.json`, from `scripts/make_sample_project.py`).
 
+## Upgrade: style profiles, long-recording gating, Short polish (2026-11-25)
+
+- **Style profiles** (game-agnostic, by content style): each style sets default Shorts layout, dead-air handling (trim / speed up / none; none for Horror and Story) and HUD-text weight (0 for Horror and Story). Override any of them per project on the Shorts page; an empty override means "use the profile".
+- **Analysis windows overlap by 30 s**, so a moment on a window boundary is seen whole; duplicates are merged.
+- **AI request cap for long recordings:** windows are ranked by local measurements (sound jumps, cuts, motion, voice, HUD-text changes). Only the top **12** (adjustable), plus time ranges you pin, are sent to Gemini or Ollama. The rest are marked "skipped", not failed. Finished windows are always kept.
+- **Per-Short fact-check:** the hook and title are checked against the evidence *inside the clip's time range*. Words or numbers from elsewhere in the recording, or numbers found nowhere, are flagged, with one-click in-clip suggestions. Flags must be acknowledged at final approval.
+- **Dead air per Short:** static, quiet lead-in is trimmed or played at 2–2.5×, and a static tail is trimmed. At least 2 s are kept before the key moment and 1.5 s after the last activity, and a Short never drops below 15 s. Captions move with the edits. The long video is never changed.
+- **Split layout without a facecam:** the bottom panel can be any shape (e.g. a thin full-width score strip, sized automatically, never stretched). Choosing "whole frame" there shows a warning.
+- **Safe-zone overlay** in the framing preview: the Shorts player's usual UI areas (bottom 22%, right 12%; approximate).
+- **Voiceover quick loop** on the Shorts and Metadata pages: upload or record, then "Apply". This re-mixes (ducked, loudness-normalised), re-transcribes, re-renders approved Shorts and updates the package, without repeating import, mapping, analysis or highlights. A Short can also have its own voiceover.
+- **Optional HUD text reading (OCR):** if `rapidocr-onnxruntime` is installed, digit changes in top and bottom HUD bands become a bonus signal and ground-truth text for the AI and fact-checks. Clock-like bands are ignored, and empty results never lower a score. **Not installed by default and untested here:**
+  ```powershell
+  .\.venv\Scripts\python.exe -m pip install rapidocr-onnxruntime
+  ```
+  Re-run `scripts\verify_installation.py` afterwards, since pip may change the pinned `onnxruntime`.
+- **Thumbnails:**
+  - each highlight has an **outcome mood** (win_hype, clutch_tension, fail_shock, funny_chaos);
+  - Gemini prompts are **text-free** and styled by mood;
+  - a local **composer** adds 2–3 bold uppercase words (rejecting phrases that end in a preposition) and keeps the bottom-right clear;
+  - the safe-area preview can show a mock video-length badge.
+- **Hardening:**
+  - **A/V sync fix:** when a recording's video starts after its audio (common on phones), every cut now accounts for the gap. It was measured at about 0.5 s of drift before the fix and under 0.05 s after.
+  - Shorts always encode stereo AAC: FFmpeg 9.1 stalled on mono input at 192 kb/s.
+  - FCP7 XML and EDL use `file://localhost/D:/…` URLs.
+  - GPU memory is freed before a local vision model runs, and Ollama models are unloaded (`keep_alive: 0`) after analysis and before GPU transcription.
+  - Final approval shows non-blocking YouTube quota and testing-mode sign-in notes.
+
 ## Phase 5 (final approval & upload)
 
 - **Final approval & upload** page: a checklist that re-checks every approved file against its validation record.

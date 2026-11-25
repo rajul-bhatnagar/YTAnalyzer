@@ -19,6 +19,15 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _PLACEHOLDER = re.compile(r"\[[^\]]+\]")
 
+# Shown before uploading; non-blocking. Figures as published by Google and known to the app: verify in Google Cloud.
+YOUTUBE_NOTICES = [
+    "Quota: an upload costs about 1,600 YouTube Data API units and a new project gets about 10,000 units a day, so "
+    "roughly 6 uploads a day. Check your project's quota page in Google Cloud Console.",
+    "While your OAuth app's publishing status is 'Testing', Google expires its sign-ins after about 7 days: if an "
+    "upload says to connect again, use Connect YouTube account.",
+    "Uploads stay private by default; nothing becomes public unless you choose it and confirm.",
+]
+
 
 class PublishServiceMixin:
     _youtube_factory: Callable[[], Any] | None = None  # tests inject a fake YouTube service
@@ -88,6 +97,8 @@ class PublishServiceMixin:
             else:
                 add("Creator package", "ok", f"Title: {pack['titles'][0]}")
             ack = [*pack.get("number_flags", []), *pack.get("uncertainty", [])]
+        for s in approved:  # out-of-window or unsupported claims in an approved Short's hook/title
+            ack += [f"Short #{s['highlight_id']}: {m}" for m in self.short_fact_check(s["highlight_id"])["messages"]]
         if self.user_thumbnail(pid):
             add("Thumbnail", "ok", "Your imported thumbnail.")
         else:
@@ -132,7 +143,8 @@ class PublishServiceMixin:
 
     def youtube_status(self: "StudioService") -> dict[str, Any]:
         secrets = config.get_secret("YOUTUBE_CLIENT_SECRETS_FILE")
-        return {"client_configured": bool(secrets), "connected": self._yt_token().exists() or bool(self._youtube_factory)}
+        return {"client_configured": bool(secrets), "connected": self._yt_token().exists() or bool(self._youtube_factory),
+                "notices": YOUTUBE_NOTICES}
 
     def youtube_connect(self: "StudioService") -> None:
         secrets = config.get_secret("YOUTUBE_CLIENT_SECRETS_FILE")

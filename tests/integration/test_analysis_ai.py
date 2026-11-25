@@ -133,7 +133,7 @@ def setup(studio_paths, media, monkeypatch):
     svc.start_inspection(pid)
     assert svc.runner.wait_idle(120)
     svc.save_track_roles(pid, {0: TrackRole.COMBINED_MIX, 1: TrackRole.GAME, 2: TrackRole.MIC})
-    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45,
+    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45, "analysis.window_overlap_sec": 0,
                                     "ai.min_request_interval_sec": 0.0, "ai.provider": "gemini",
                                     "ai.gemini_visual_enabled": True, "ai.ollama_model": "qwen-test:1b"})
     fake = FakeGenai()
@@ -287,3 +287,34 @@ def test_failed_windows_are_retried_on_the_next_run(setup):
     # A third run with everything finished reuses the stage and sends nothing.
     _run(svc, pid)
     assert len(fake.calls) == calls + 2
+
+
+def test_vram_is_freed_before_local_vision_and_model_unloaded_after(setup, monkeypatch):
+    """6 GB GPU: free this process's GPU memory before a local vision model runs; unload it afterwards."""
+    svc, pid, _fake, _ = setup
+    order: list[str] = []
+    from pipeline import transcribe as tr
+    monkeypatch.setattr(tr, "free_gpu_memory", lambda: order.append("free") or {})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/version":
+            return httpx.Response(200, json={"version": "0.40.16"})
+        if path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["completion", "vision"]})
+        if path == "/api/chat":
+            order.append("chat")
+            assert json.loads(request.content)["messages"][1].get("images")  # frames really sent to the vision model
+            return httpx.Response(200, json={"message": {"content": json.dumps({"events": []})}, "done_reason": "stop"})
+        if path == "/api/generate":
+            assert json.loads(request.content)["keep_alive"] == 0
+            order.append("unload")
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+    monkeypatch.setattr(svc, "_ollama", lambda ai, model=None: OllamaProvider(
+        ai["ollama_base_url"], ai["ollama_model"] if model is None else model, transport=httpx.MockTransport(handler)))
+    svc.save_project_settings(pid, {"ai.provider": "ollama", "ai.ollama_model": "llava-test:7b"})
+    job, j = _run(svc, pid)
+    assert j["state"] == "HIGHLIGHT_REVIEW", j["error_summary"]
+    assert order[0] == "free" and order[-1] == "unload" and order.count("chat") >= 1
+    assert svc.ai_report(pid)["effective"] == ["ollama:llava-test:7b (images)"]

@@ -8,8 +8,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from pipeline import analysis_stages, config, ffmpeg_tools, longform
-from pipeline.ai_providers.base import EVENT_CATEGORIES, ProviderError
+from pipeline import analysis_stages, config, ffmpeg_tools, gameplay_analysis, longform
+from pipeline.ai_providers.base import EVENT_CATEGORIES, OUTCOME_MOODS, ProviderError
 from pipeline.analysis_service import CONSENT_MODES, PROVIDERS, describe_window_statuses
 from pipeline.project_service import StudioService
 from ui.common import fmt_duration, get_service, job_status_panel, require_project
@@ -106,8 +106,23 @@ def _provider_setup(svc: StudioService, pid: str, ai: dict[str, Any], busy: bool
                                   key=_k(pid, "max_req"))
         interval = c2.number_input("Seconds between cloud requests", 0.0, 120.0, float(ai["min_request_interval_sec"]),
                                    1.0, key=_k(pid, "interval"))
+        c3, c4 = st.columns(2)
+        max_win = c3.number_input("Max AI windows per run (0 = all)", 0, 500, int(ai.get("max_ai_windows") or 0),
+                                  key=_k(pid, "max_win"),
+                                  help="Windows are ranked by measured activity (sound jumps, cuts, motion, voice, "
+                                       "HUD changes); only the top ones are sent to the AI. Keeps long recordings "
+                                       "inside free request limits.")
+        pinned_now = ", ".join(f"{_ts(a)}-{_ts(b)}" for a, b in ai.get("pinned_ranges") or [])
+        pinned_txt = c4.text_input("Always analyse these ranges", pinned_now, key=_k(pid, "pinned"),
+                                   placeholder="e.g. 12:30-15:00, 1:02:00-1:05:00")
+        try:
+            pinned = [[a, b] for a, b in gameplay_analysis.parse_ranges(pinned_txt)]
+        except ValueError as e:
+            st.error(str(e))
+            pinned = ai.get("pinned_ranges") or []
         values |= {"ai.on_quota": on_quota, "ai.max_requests_per_job": int(max_req),
-                   "ai.min_request_interval_sec": float(interval)}
+                   "ai.min_request_interval_sec": float(interval), "ai.max_ai_windows": int(max_win),
+                   "ai.pinned_ranges": pinned}
     return values
 
 
@@ -155,6 +170,10 @@ def _setup_tab(svc: StudioService, proj: dict[str, Any], busy: bool) -> None:
         values |= {
             "analysis.window_sec": int(c1.number_input("Window length (s)", 30, 600, int(a["window_sec"]), 15,
                                                        key=_k(pid, "win"))),
+            "analysis.window_overlap_sec": int(c2.number_input("Window overlap (s)", 0, 120,
+                                                               int(a.get("window_overlap_sec") or 0), 5,
+                                                               key=_k(pid, "ovl"),
+                                                               help="Moments on a window boundary are seen whole.")),
             "analysis.frame_interval_sec": float(c2.number_input("Frame every (s)", 1.0, 60.0,
                                                                  float(a["frame_interval_sec"]), 1.0, key=_k(pid, "fi"))),
             "analysis.max_frames_per_window": int(c3.number_input("Max frames per window", 4, 120,
@@ -290,6 +309,10 @@ def _card(svc: StudioService, h: dict[str, Any], dur: float, busy: bool) -> None
                                  placeholder="Write what actually happens")
             title = st.text_input("Suggested title", h["suggested_title"] or "", max_chars=100,
                                   key=_k(pid, f"title_{hid}"), placeholder="Your title")
+            moods = ["", *OUTCOME_MOODS]
+            mood = st.selectbox("Outcome mood (sets the thumbnail look)", moods,
+                                index=moods.index(h.get("outcome_mood") or "") if (h.get("outcome_mood") or "") in moods
+                                else 0, format_func=lambda m: OUTCOME_MOODS.get(m, "Not set"), key=_k(pid, f"mood_{hid}"))
             notes = st.text_input("Notes", h["user_notes"] or "", key=_k(pid, f"notes_{hid}"))
             b1, b2, b3 = st.columns(3)
             for col, label, status in ((b1, "Save", None), (b2, "Approve", "approved"), (b3, "Reject", "rejected")):
@@ -298,7 +321,7 @@ def _card(svc: StudioService, h: dict[str, Any], dur: float, busy: bool) -> None
                     try:
                         moved = abs(s - h["eff_start"]) > 1e-6 or abs(e - h["eff_end"]) > 1e-6
                         res = svc.update_highlight(hid, start=s if moved else None, end=e if moved else None,
-                                                   status=status, notes=notes, hook=hook, title=title)
+                                                   status=status, notes=notes, hook=hook, title=title, mood=mood)
                         if moved:  # the old preview no longer matches the clip
                             st.session_state.pop(_k(pid, f"prev_{hid}"), None)
                         st.session_state[_k(pid, f"warn_{hid}")] = res["warnings"]

@@ -44,19 +44,63 @@ class Window:
     end: float
 
 
-def build_windows(duration: float, window_sec: float, min_last_sec: float = 30.0) -> list[Window]:
+def build_windows(duration: float, window_sec: float, min_last_sec: float = 30.0,
+                  overlap_sec: float = 0.0) -> list[Window]:
+    """Analysis windows of ``window_sec``. With ``overlap_sec`` each window starts that much before the previous
+    one ends, so a moment on a boundary is seen whole by at least one window (fusion merges the duplicates).
+    A last window shorter than ``min_last_sec`` is folded into the one before."""
     window_sec = max(float(window_sec), 30.0)
-    bounds = []
+    overlap = min(max(float(overlap_sec), 0.0), window_sec / 2)
+    step = window_sec - overlap
+    bounds: list[list[float]] = []
     t = 0.0
     while t < duration - 1e-6:
-        bounds.append([t, min(t + window_sec, duration)])
-        t += window_sec
+        end = min(t + window_sec, duration)
+        bounds.append([t, end])
+        if end >= duration - 1e-6:
+            break
+        t += step
     if len(bounds) > 1 and bounds[-1][1] - bounds[-1][0] < min_last_sec:
         # Two statements on purpose: in `bounds[-2][1] = bounds.pop()[1]` the pop runs first, so [-2] would then
         # point at the wrong window.
         tail = bounds.pop()
         bounds[-1][1] = tail[1]
     return [Window(i, round(s, 3), round(e, 3)) for i, (s, e) in enumerate(bounds)]
+
+
+def rank_windows(windows: list[Window], activity: dict[int, float], limit: int,
+                 pinned: list[tuple[float, float]] | None = None, always: set[int] | None = None) -> set[int]:
+    """Windows worth an AI request: the ``limit`` most active by local measurements, plus any window that overlaps a
+    user-pinned range or is in ``always`` (e.g. already analysed, so free). ``limit`` <= 0 means every window."""
+    if limit <= 0 or limit >= len(windows):
+        return {w.idx for w in windows}
+    ranked = sorted(windows, key=lambda w: (-activity.get(w.idx, 0.0), w.idx))
+    chosen = {w.idx for w in ranked[:limit]}
+    for a, b in pinned or []:
+        chosen |= {w.idx for w in windows if w.start < b and w.end > a}
+    return chosen | (always or set())
+
+
+def parse_ranges(text: str) -> list[tuple[float, float]]:
+    """'12:30-15:00, 1:02:00-1:05:00' -> [(750, 900), (3720, 3900)]. Raises ValueError on a bad range."""
+    def sec(t: str) -> float:
+        parts = [float(x) for x in t.strip().split(":")]
+        if not parts or len(parts) > 3 or any(x < 0 for x in parts):
+            raise ValueError(f"Not a time: {t!r}")
+        v = 0.0
+        for x in parts:
+            v = v * 60 + x
+        return v
+    out = []
+    for chunk in (c for c in text.replace(";", ",").split(",") if c.strip()):
+        if "-" not in chunk:
+            raise ValueError(f"Use start-end, e.g. 12:30-15:00 (got {chunk.strip()!r})")
+        a, b = chunk.split("-", 1)
+        lo, hi = sec(a), sec(b)
+        if hi <= lo:
+            raise ValueError(f"End must be after start in {chunk.strip()!r}")
+        out.append((lo, hi))
+    return out
 
 
 # --- evidence & prompts ---------------------------------------------------------------------------------
@@ -67,11 +111,14 @@ class WindowEvidence:
     signals: list[dict[str, Any]]
     transcript: list[dict[str, Any]]  # segments in video time: start, end, text
     context: dict[str, Any]
+    ocr: list[dict[str, Any]] = field(default_factory=list)  # on-screen text lines: t, text
 
     def fingerprint(self) -> str:
         data = {"w": [self.window.start, self.window.end], "f": [(f["t"], f["path"]) for f in self.frames],
                 "s": [(s["key"], s["strength"]) for s in self.signals],
                 "t": [(round(x["start"], 2), x["text"]) for x in self.transcript], "c": self.context}
+        if self.ocr:  # only when present, so caches made before HUD reading stay valid
+            data["o"] = [(x["t"], x["text"]) for x in self.ocr]
         return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:24]
 
     def transcript_text(self) -> str:
@@ -122,6 +169,10 @@ def build_prompt(ev: WindowEvidence, mode: str, frame_times: list[float]) -> str
                          + (f" Uncertain: {s['uncertainty']}" if s["uncertainty"] else ""))
     else:
         lines.append("- none above the detection thresholds")
+    if ev.ocr:
+        lines.append("\nOn-screen text read by OCR (may contain misreads; time it was first seen):")
+        for x in ev.ocr:
+            lines.append(f"[{x['t']:.1f}] {x['text']}")
     lines.append("\nTranscript of the player's voice (speech recognition; may contain errors):")
     if ev.transcript:
         for x in ev.transcript[:80]:
@@ -313,7 +364,7 @@ def analyse_windows(evidence: list[WindowEvidence], plan: ProviderPlan, cache_di
                     progress: Callable[[float, str], None], cancel_check: Callable[[], bool],
                     pause_check: Callable[[], bool], video_windows: set[int] | None = None,
                     video_chunk: Callable[[Window], Path] | None = None,
-                    sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+                    sleep: Callable[[float], None] = time.sleep, selected: set[int] | None = None) -> dict[str, Any]:
     """Run every window through the current provider; returns the analysis report (results are in the cache)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {"windows": [], "plan_events": plan.events, "requests": 0, "prompt_version": PROMPT_VERSION}
@@ -325,7 +376,8 @@ def analyse_windows(evidence: list[WindowEvidence], plan: ProviderPlan, cache_di
         progress(n / max(len(evidence), 1), f"Analysing window {n + 1} of {len(evidence)} with {plan.describe()}")
         frac = n / max(len(evidence), 1)
         entry = _analyse_one(ev, plan, cache_dir, duration, resolve, cfg, budget, cancel_check,
-                             video_windows or set(), video_chunk, sleep, lambda msg, f=frac: progress(f, msg))
+                             video_windows or set(), video_chunk, sleep, lambda msg, f=frac: progress(f, msg),
+                             selected)
         report["windows"].append(entry)
     report["requests"] = budget.used
     report["effective"] = sorted({f"{w['provider']}:{w['model']} ({w['mode']})" for w in report["windows"]
@@ -337,7 +389,7 @@ def _analyse_one(ev: WindowEvidence, plan: ProviderPlan, cache_dir: Path, durati
                  resolve: Callable[[str], Path], cfg: dict[str, Any], budget: Budget,
                  cancel_check: Callable[[], bool], video_windows: set[int],
                  video_chunk: Callable[[Window], Path] | None, sleep: Callable[[float], None],
-                 notify: Callable[[str], None] | None = None) -> dict[str, Any]:
+                 notify: Callable[[str], None] | None = None, selected: set[int] | None = None) -> dict[str, Any]:
     w = ev.window
     path = cache_dir / f"w{w.idx:04d}.json"
     while True:
@@ -353,6 +405,11 @@ def _analyse_one(ev: WindowEvidence, plan: ProviderPlan, cache_dir: Path, durati
             cached = json.loads(path.read_text("utf-8"))
             if cached.get("key") == key and cached.get("status") == "ok":
                 return {k: v for k, v in cached.items() if k not in ("result", "prompt")} | {"cached": True}
+        if selected is not None and w.idx not in selected:
+            return {"window": w.idx, "start": w.start, "end": w.end, "status": "skipped", "provider": "none",
+                    "model": "", "mode": "signals", "events": 0,
+                    "issues": ["Not sent to AI: less measured activity than the windows that were (raise 'Max AI "
+                               "windows' or pin this time range to include it)."]}
         if not budget.take(cancel_check):
             plan.drop_to_signals(f"the request limit for one job ({budget.max_requests}) was reached")
             continue

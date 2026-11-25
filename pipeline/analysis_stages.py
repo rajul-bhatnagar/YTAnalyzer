@@ -14,7 +14,8 @@ from typing import Any
 
 import numpy as np
 
-from . import audio_analysis, event_detection, frame_sampler, gameplay_analysis, highlight_scoring, longform
+from . import (audio_analysis, event_detection, frame_sampler, gameplay_analysis, highlight_scoring, hud_ocr,
+               longform, style_profiles)
 from . import activity_signals as sig
 from . import ffmpeg_tools as fx
 from .database import Database, to_json, utcnow
@@ -23,12 +24,13 @@ from .manifest import manifest_entry
 from .paths import StudioPaths
 
 PHASE2_STAGES = ["extract_audio", "voiceover", "signals", "transcribe", "subtitles"]
-ANALYSIS_STAGES = ["signal_events", "frames", "ai_windows", "highlights"]
+ANALYSIS_STAGES = ["signal_events", "frames", "hud_ocr", "ai_windows", "highlights"]
 TARGETS = {"analysis": PHASE2_STAGES + ANALYSIS_STAGES, "candidates": ["highlights"]}
 TARGET_LABELS = {"analysis": "Analyse gameplay & find highlights", "candidates": "Regenerate highlight candidates"}
 STAGE_LABELS = {
     "signal_events": "Measure audio/visual evidence (transients, scene changes, voice emphasis)",
     "frames": "Extract analysis frames",
+    "hud_ocr": "Read on-screen HUD text (optional, offline)",
     "ai_windows": "AI analysis, window by window",
     "highlights": "Fuse evidence, score and build Shorts candidates",
 }
@@ -59,11 +61,11 @@ def transcript_segments_video_time(files: longform.ProjectFiles) -> list[dict[st
     return [{**s, "text": s["text"].strip()} for _, s in sorted(segs.items())]
 
 
-def make_video_chunk(source: Path, out_dir: Path, start: float, end: float) -> Path:
+def make_video_chunk(source: Path, out_dir: Path, start: float, end: float, shift: float = 0.0) -> Path:
     """Low-resolution proxy of one window for optional Gemini video analysis (never the full-quality source)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"chunk_{int(start * 1000):09d}.mp4"
-    fx.ffmpeg(["-y", "-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", str(source), "-map", "0:v:0",
+    fx.ffmpeg(["-y", "-ss", f"{start + shift:.3f}", "-t", f"{end - start:.3f}", "-i", str(source), "-map", "0:v:0",
                "-map", "0:a:0?", "-vf", "scale=-2:360", "-c:v", "libx264", "-preset", "veryfast", "-crf", "32",
                "-c:a", "aac", "-b:a", "64k", "-ac", "1", str(out)], timeout=900)
     return out
@@ -114,14 +116,16 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
                            warnings=warnings, data={"events": len(events)})
 
     # --- frames -------------------------------------------------------------------------------
-    frame_keys = ("window_sec", "frame_interval_sec", "frame_width", "max_frames_per_window", "extra_frames_per_event")
+    frame_keys = ("window_sec", "window_overlap_sec", "frame_interval_sec", "frame_width", "max_frames_per_window",
+                  "extra_frames_per_event")
 
     def fr_inputs(ctx):
         return [src_id, _fp(f.signal_events)], {k: a_cfg[k] for k in frame_keys}
 
     def fr_exec(ctx: StageContext) -> StageResult:
         se = _read_json(f.signal_events)
-        windows = gameplay_analysis.build_windows(lc.duration, float(a_cfg["window_sec"]))
+        windows = gameplay_analysis.build_windows(lc.duration, float(a_cfg["window_sec"]),
+                                                  overlap_sec=float(a_cfg.get("window_overlap_sec") or 0))
         peaks = [e["peak"] for e in se["events"]]
         frames: list[dict[str, Any]] = []
         for n, w in enumerate(windows):
@@ -129,8 +133,14 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
             times = frame_sampler.choose_timestamps(
                 w.start, w.end, float(a_cfg["frame_interval_sec"]), [p for p in peaks if w.start <= p < w.end],
                 int(a_cfg["extra_frames_per_event"]), int(a_cfg["max_frames_per_window"]), lc.duration)
-            frames += [fi.to_dict() for fi in frame_sampler.sample_window(
-                lc.source, f.frames_dir, w.idx, times, int(a_cfg["frame_width"]), paths.to_stored, ctx.cancel_check)]
+            # Overlapping windows share frames: reuse one already extracted within 0.3 s instead of decoding again.
+            new_times, reused = [], []
+            for t, why in times:
+                hit = next((fr for fr in frames if abs(fr["t"] - t) <= 0.3), None)
+                (reused.append({**hit, "window": w.idx}) if hit else new_times.append((t, why)))
+            frames += reused + [fi.to_dict() for fi in frame_sampler.sample_window(
+                lc.source, f.frames_dir, w.idx, new_times, int(a_cfg["frame_width"]), paths.to_stored,
+                ctx.cancel_check, shift=lc.video_shift)]
         keep = {paths.from_stored(fr["path"]).name for fr in frames}
         for old in f.frames_dir.glob("*.jpg"):  # frames from earlier settings
             if old.name not in keep:
@@ -146,6 +156,36 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
         return StageResult(manifest=[manifest_entry(f.frames_index, paths.root, "frames", {"ok": True})],
                            warnings=warnings, data={"frames": len(frames), "windows": len(windows)})
 
+    # --- hud_ocr (optional) --------------------------------------------------------------------
+    hud_weight = style_profiles.resolve(project["content_style"], settings).hud_ocr_weight
+
+    def hud_inputs(ctx):
+        return [_fp(f.frames_index)], {"weight": hud_weight, "bands": a_cfg.get("hud_bands"),
+                                       "available": hud_ocr.available()}
+
+    def hud_exec(ctx: StageContext) -> StageResult:
+        data: dict[str, Any] = {"available": hud_ocr.available(), "weight": hud_weight, "frames": []}
+        warnings = []
+        if hud_weight <= 0:
+            data["skipped"] = "HUD text weight is 0 for this content style."
+        elif not data["available"]:
+            data["skipped"] = "Optional package rapidocr-onnxruntime is not installed."
+            warnings.append("HUD text reading skipped: the optional 'rapidocr-onnxruntime' package is not installed "
+                            "(nothing else is affected).")
+        else:
+            fi = _read_json(f.frames_index)
+            data["frames"] = hud_ocr.read_frames(fi["frames"], a_cfg.get("hud_bands") or [], paths.from_stored,
+                                                 ctx.cancel_check)
+            if not any(x["texts"] for x in data["frames"]):
+                warnings.append("No on-screen text was read in the HUD bands (no penalty; adjust the bands if your "
+                                "game shows its score elsewhere).")
+        _write_json(f.hud_ocr, data)
+        return StageResult(manifest=[manifest_entry(f.hud_ocr, paths.root, "hud_ocr", {"ok": True})], warnings=warnings)
+
+    def hud_atoms() -> list[dict[str, Any]]:
+        data = _read_json(f.hud_ocr, {}) or {}
+        return hud_ocr.change_events(data.get("frames", []), float(data.get("weight") or 0))
+
     # --- ai_windows ---------------------------------------------------------------------------
     def ai_inputs(ctx):
         plan_desc = ctx.data.get("plan_descriptor", {"provider": "none"})
@@ -154,9 +194,10 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
         prev = _read_json(f.ai_report, {}) or {}
         unfinished = [w["window"] for w in prev.get("windows", []) if w.get("status") in ("failed", "invalid")]
         retry = {"retry_after": prev.get("run_id"), "windows": unfinished} if unfinished and plan_desc["provider"] != "none"             else None
-        return [_fp(f.frames_index), _fp(f.signal_events), _fp(f.words_json)], {
+        return [_fp(f.frames_index), _fp(f.signal_events), _fp(f.words_json), _fp(f.hud_ocr)], {
             "plan": plan_desc, "context": context, "prompt": gameplay_analysis.PROMPT_VERSION, "retry": retry,
-            "cfg": {k: ai_cfg[k] for k in ("max_frames_per_request", "temperature", "gemini_video_max_windows")}}
+            "cfg": {k: ai_cfg[k] for k in ("max_frames_per_request", "temperature", "gemini_video_max_windows",
+                                           "max_ai_windows", "pinned_ranges")}}
 
     def ai_exec(ctx: StageContext) -> StageResult:
         plan: gameplay_analysis.ProviderPlan = ctx.data["plan"]
@@ -164,15 +205,27 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
         se = _read_json(f.signal_events)
         segs = transcript_segments_video_time(f)
         windows = [gameplay_analysis.Window(**w) for w in fi["windows"]]
+        ocr = (_read_json(f.hud_ocr, {}) or {}).get("frames", [])
+        hud = hud_atoms()
         evidence = []
         for w in windows:
             evidence.append(gameplay_analysis.WindowEvidence(
                 w, [fr for fr in fi["frames"] if fr["window"] == w.idx],
                 [e for e in se["events"] if w.start <= e["peak"] < w.end],
-                [s for s in segs if s["end"] > w.start and s["start"] < w.end], context))
+                [s for s in segs if s["end"] > w.start and s["start"] < w.end], context,
+                hud_ocr.lines_in(ocr, w.start, w.end)))
+        # Local measurements rank the windows; only the most active (plus pinned ranges, plus windows already
+        # analysed, which cost nothing) are sent to the AI, keeping long recordings inside free request limits.
+        activity = {w.idx: event_detection.window_activity(se["events"], w.start, w.end)
+                    + sum(a["strength"] for a in hud if w.start <= a["peak"] < w.end) for w in windows}
+        prev = _read_json(f.ai_report, {}) or {}
+        done = {e["window"] for e in prev.get("windows", []) if e.get("status") == "ok"}
+        pinned = [(float(a), float(b)) for a, b in ai_cfg.get("pinned_ranges") or []]
+        selected = gameplay_analysis.rank_windows(windows, activity, int(ai_cfg.get("max_ai_windows") or 0), pinned,
+                                                  done)
         video_windows: set[int] = set()
         if plan.current is not None and plan.current.mode == "video":
-            ranked = sorted(windows, key=lambda w: -event_detection.window_activity(se["events"], w.start, w.end))
+            ranked = sorted((w for w in windows if w.idx in selected), key=lambda w: -activity[w.idx])
             video_windows = {w.idx for w in ranked[: int(ai_cfg["gemini_video_max_windows"])]}
         budget = gameplay_analysis.Budget(int(ai_cfg["max_requests_per_job"]), float(ai_cfg["min_request_interval_sec"])
                                           if plan.current and plan.current.provider.cloud else 0.0,
@@ -182,8 +235,9 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
                 evidence, plan, f.windows_dir, lc.duration, paths.from_stored, ai_cfg, budget,
                 lambda x, note: ctx.progress(0.02 + 0.96 * x, note), ctx.cancel_check,
                 ctx.data.get("pause_check", lambda: False), video_windows,
-                (lambda w: make_video_chunk(lc.source, f.video_chunks_dir, w.start, w.end)) if video_windows else None,
-                ctx.data.get("sleep") or time.sleep)
+                (lambda w: make_video_chunk(lc.source, f.video_chunks_dir, w.start, w.end, lc.video_shift))
+                if video_windows else None,
+                ctx.data.get("sleep") or time.sleep, selected=selected)
         finally:
             for chunk in f.video_chunks_dir.glob("*.mp4") if f.video_chunks_dir.exists() else []:
                 chunk.unlink(missing_ok=True)
@@ -211,7 +265,7 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
 
     # --- highlights ---------------------------------------------------------------------------
     def hl_inputs(ctx):
-        return [_fp(f.ai_report), _fp(f.signal_events), _fp(f.frames_index), _fp(f.signals)], {
+        return [_fp(f.ai_report), _fp(f.signal_events), _fp(f.frames_index), _fp(f.signals), _fp(f.hud_ocr)], {
             "cfg": h_cfg, "style": project["content_style"], "count": ctx.data.get("candidate_count")}
 
     def hl_exec(ctx: StageContext) -> StageResult:
@@ -222,7 +276,12 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
         se = _read_json(f.signal_events)
         fi = _read_json(f.frames_index)
         results = gameplay_analysis.load_window_results(f.windows_dir, report)
-        fused = highlight_scoring.fuse(se["events"], results)
+        events = se["events"]
+        hud = hud_atoms()
+        if hud:  # re-cluster with HUD text changes as one more signal (a bonus; empty OCR changes nothing)
+            events = event_detection.detect(se["audio"], se["scenes"], [*se["motion_bursts"], *hud],
+                                            words_video_time(f), lc.duration, float(a_cfg["event_merge_gap_sec"]))
+        fused = highlight_scoring.fuse(events, results)
         _write_json(f.fused_events, {"events": fused})
         kept = [dict(r) for r in db.query(
             "SELECT * FROM highlights WHERE project_id = ? AND (status != 'suggested' OR user_start_sec IS NOT NULL "
@@ -255,6 +314,7 @@ def build_stages(db: Database, paths: StudioPaths, project: dict[str, Any], sett
     all_specs = {
         "signal_events": StageSpec("signal_events", 1, se_exec, se_inputs),
         "frames": StageSpec("frames", 1, fr_exec, fr_inputs),
+        "hud_ocr": StageSpec("hud_ocr", 1, hud_exec, hud_inputs, optional=True),
         "ai_windows": StageSpec("ai_windows", 1, ai_exec, ai_inputs),
         "highlights": StageSpec("highlights", 1, hl_exec, hl_inputs),
     }
@@ -302,12 +362,12 @@ def persist(db: Database, project_id: str, analysis_id: str, fused: list[dict[st
             conn.execute(
                 "INSERT INTO highlights(project_id, start_sec, end_sec, event_sec, score, score_breakdown, rationale, "
                 "evidence, confidence, hook_caption, suggested_title, status, created_at, updated_at, analysis_id, "
-                "rank, score_band, handles, event_keys, uncertainty, category) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "rank, score_band, handles, event_keys, uncertainty, category, outcome_mood) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (project_id, c["start_sec"], c["end_sec"], c["event_sec"], c["score"], to_json(c["score_breakdown"]),
                  c["reason"], to_json(c["evidence"]), c["confidence"], c["hook_caption"], c["suggested_title"], now, now,
                  analysis_id, c["rank"], c["score_band"], to_json(c["handles"]), to_json(c["event_keys"]),
-                 c["uncertainty"], c["category"]))
+                 c["uncertainty"], c["category"], c.get("outcome_mood", "")))
 
 
 def stage_label(name: str) -> str:

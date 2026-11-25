@@ -41,6 +41,19 @@ STYLE_MULTIPLIERS: dict[str, dict[str, float]] = {
 }
 
 BANDS = [(75, "strong"), (55, "promising"), (35, "possible"), (0, "weak")]
+
+# Fallback when the AI gave no outcome mood: from the event category; unknown stays "" (no guess).
+CATEGORY_MOOD = {"achievement": "win_hype", "skill": "win_hype", "clutch": "clutch_tension",
+                 "close_call": "clutch_tension", "failure": "fail_shock", "surprise": "fail_shock",
+                 "funny": "funny_chaos"}
+
+
+def outcome_mood(ev: dict[str, Any]) -> str:
+    from .ai_providers.base import OUTCOME_MOODS  # noqa: PLC0415
+    ai_mood = ((ev.get("ai") or {}).get("outcome_mood") or "").strip().lower()
+    if ai_mood in OUTCOME_MOODS:
+        return ai_mood
+    return CATEGORY_MOOD.get(ev.get("category", ""), "")
 SIGNALS_ONLY_CAP = 70
 
 
@@ -73,7 +86,8 @@ def fuse(signal_events: list[dict[str, Any]], window_results: dict[int, dict[str
             m = merged[-1]
             ov = _overlap(m["start_sec"], m["end_sec"], e["start_sec"], e["end_sec"])
             shorter = min(m["end_sec"] - m["start_sec"], e["end_sec"] - e["start_sec"]) or 1.0
-            if ov / shorter > 0.5 and m["category"] == e["category"]:
+            # Same moment described twice: same category, or by two overlapping windows (whatever they called it).
+            if ov / shorter > 0.5 and (m["category"] == e["category"] or m["_window"] != e["_window"]):
                 m["end_sec"] = max(m["end_sec"], e["end_sec"])
                 m["frame_times"] = sorted(set(m["frame_times"]) | set(e["frame_times"]))
                 continue
@@ -90,8 +104,9 @@ def fuse(signal_events: list[dict[str, Any]], window_results: dict[int, dict[str
             "key": f"a{e['_window']}_{e['_idx']}_{int(round(e['start_sec'] * 1000))}",
             "start": round(e["start_sec"], 2), "end": round(e["end_sec"], 2), "peak": round(peak, 2),
             "category": e["category"], "description": e["description"], "source": "ai+signals" if linked else "ai",
-            "ai": {k: e[k] for k in ("visual_observation", "frame_times", "audio_observation", "transcript_quote",
-                                     "confidence", "uncertainty", "factors", "hook_caption", "suggested_title")}
+            "ai": {k: e.get(k, "") for k in ("visual_observation", "frame_times", "audio_observation",
+                                             "transcript_quote", "confidence", "uncertainty", "factors",
+                                             "hook_caption", "suggested_title", "outcome_mood")}
                   | {"provider": e["_provider"], "model": e["_model"], "mode": e["_mode"]},
             "signals": linked,
             "uncertainty": " ".join(x for x in [e["uncertainty"], *[s["uncertainty"] for s in linked]] if x).strip(),
@@ -295,7 +310,8 @@ def _to_candidate(c: dict[str, Any], rank: int, frames: list[dict[str, Any]]) ->
         reason += " (No AI description: ranked from measurements only.)"
     return {
         "rank": rank, **{k: c["clip"][k] for k in ("start_sec", "end_sec", "event_sec", "handles")},
-        "category": ev["category"], "hook_caption": (ai or {}).get("hook_caption", ""),
+        "category": ev["category"], "outcome_mood": outcome_mood(ev),
+        "hook_caption": (ai or {}).get("hook_caption", ""),
         "suggested_title": (ai or {}).get("suggested_title", ""), "reason": reason,
         "score": c["score"], "score_band": band(c["score"]), "score_breakdown": c["breakdown"],
         "confidence": c["confidence"],

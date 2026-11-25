@@ -288,3 +288,14 @@ _HARMLESS = ("[null @", "non monotonically increasing dts", "non-monotonic dts")
 
 def decode_errors(stderr: str) -> list[str]:
     return [ln for ln in stderr.splitlines() if ln.strip() and not any(h in ln.lower() for h in _HARMLESS)]
+
+
+def video_seek_shift(info: MediaInfo) -> float:
+    """Seconds by which the video stream starts after the file starts. Extracted audio is aligned to the video
+    stream (0 s = first video frame), but FFmpeg seeks (-ss, trim) count from the FILE start, i.e. the earliest
+    stream. Phone recordings often start audio before video, so every video seek must add this shift, or video and
+    audio drift apart by it."""
+    if info.video is None or info.video.start_time is None:
+        return 0.0
+    starts = [x for x in [info.video.start_time, *[a.start_time for a in info.audio]] if x is not None]
+    return round(max(info.video.start_time - min(starts), 0.0), 6)

@@ -10,10 +10,10 @@ from __future__ import annotations
 from typing import Any
 
 MODALITY = {"game_transient": "audio", "loudness_rise": "audio", "voice_emphasis": "commentary",
-            "scene_change": "visual", "motion_burst": "visual"}
+            "scene_change": "visual", "motion_burst": "visual", "hud_change": "hud"}
 KIND_LABEL = {"game_transient": "sudden loud game sound", "loudness_rise": "game audio gets louder",
               "voice_emphasis": "emphatic voice", "scene_change": "sudden picture change",
-              "motion_burst": "high on-screen motion"}
+              "motion_burst": "high on-screen motion", "hud_change": "on-screen text changed"}
 
 
 def atom_strength(a: dict[str, Any]) -> float:
@@ -28,6 +28,8 @@ def atom_strength(a: dict[str, Any]) -> float:
         return 0.6 * min(a.get("strength", 1.0) * 0.5, 1.0)
     if k == "motion_burst":
         return 0.5 * min(a.get("strength", 1.0), 1.0)
+    if k == "hud_change":  # already weighted by the content-style profile (0 disables it)
+        return min(max(a.get("strength", 0.0), 0.0), 1.0)
     return 0.3
 
 
@@ -68,6 +70,8 @@ def cluster(atoms: list[dict[str, Any]], words: list[dict[str, Any]], gap: float
                                    "gameplay moment.")
             elif modalities == ["visual"]:
                 uncertainty.append("Picture change only: could be a menu, cutscene or camera move.")
+            elif modalities == ["hud"]:
+                uncertainty.append("Only on-screen text changed: check it is a real game event (OCR can misread).")
             else:
                 uncertainty.append("Only the voice signals this; the game itself shows no measurable change.")
         quote = transcript_excerpt(words, start - 2.0, end + 3.0)

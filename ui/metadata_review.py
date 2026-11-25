@@ -13,6 +13,7 @@ from pipeline import youtube_metadata as ym
 from pipeline.frame_sampler import fmt_ts
 from pipeline.models import LANGUAGES
 from pipeline.project_service import StudioService
+from ui import voiceover_panel
 from ui.common import get_service, job_status_panel, require_project
 
 
@@ -185,6 +186,7 @@ def render() -> None:
     job_status_panel(pid, dict(longform.STAGE_LABELS), "md", include_content=True)
     busy = _busy(svc, pid)
     _generate(svc, proj, busy)
+    voiceover_panel.render(svc, pid, "md_vo", busy)
     pack = svc.creator_pack(pid)
     if not pack:
         st.info("No package yet. Approve highlights, then press **Generate / update package**.")

@@ -50,6 +50,8 @@ def _upload(svc: StudioService, pid: str, chk: dict, busy: bool) -> None:
                "channel). The result is a video on your channel with the privacy you choose (private by default), "
                "not a YouTube Studio draft. Nothing is published unless you choose public. Untested from the dev PC.")
     yt = svc.youtube_status()
+    for n in yt.get("notices", []):
+        st.info(n)
     if not yt["client_configured"]:
         st.info("To enable uploads, create an OAuth client (Desktop app) in Google Cloud, save its JSON outside the "
                 "repository and set YOUTUBE_CLIENT_SECRETS_FILE in .env. Otherwise, upload the files manually.")

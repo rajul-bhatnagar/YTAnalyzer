@@ -35,7 +35,7 @@ def analysed(studio_paths, media, monkeypatch):
     assert svc.runner.wait_idle(120)
     svc.save_track_roles(pid, {0: TrackRole.COMBINED_MIX, 1: TrackRole.GAME, 2: TrackRole.MIC})
     # Point Ollama at a closed port so the page never depends on a local Ollama during tests.
-    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45, "ai.provider": "none",
+    svc.save_project_settings(pid, {"whisper.model": "tiny", "analysis.window_sec": 45, "analysis.window_overlap_sec": 0, "ai.provider": "none",
                                     "ai.ollama_base_url": "http://127.0.0.1:9"})
     svc.start_analysis(pid)
     assert svc.runner.wait_idle(600)

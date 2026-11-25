@@ -144,9 +144,42 @@ def make_cutout(src: Path, out: Path) -> Path:
 
 
 # --- prompts ---------------------------------------------------------------------------------------------------
-def thumbnail_words(hook: str, max_words: int = 3) -> str:
-    words = re.findall(r"[\w'’-]+", hook or "", flags=re.UNICODE)
-    return " ".join(words[:max_words]).upper()
+_TRAILING_BAD = {"OF", "TO", "IN", "ON", "AT", "FOR", "WITH", "BY", "FROM", "OFF", "INTO", "ONTO", "OVER", "UNDER",
+                 "THE", "A", "AN", "AND", "OR", "BUT", "SO", "IS", "ARE", "WAS", "MY", "YOUR", "HIS", "HER", "THEIR"}
+
+MOOD_LOOK = {
+    "win_hype": "bright, energetic, triumphant colours and lighting",
+    "clutch_tension": "dramatic, high-contrast lighting with a darker vignette that builds tension",
+    "fail_shock": "a surprised, dramatic look with bold red accents",
+    "funny_chaos": "playful, saturated colours with lively, chaotic energy",
+    "": "clear, high-contrast colours",
+}
+MOOD_TEXT_COLOR = {"win_hype": (255, 214, 0), "clutch_tension": (255, 255, 255), "fail_shock": (255, 59, 48),
+                   "funny_chaos": (0, 229, 255), "": (255, 255, 255)}
+FONT_CANDIDATES = ("impact.ttf", "ariblk.ttf", "arialbd.ttf", "seguibl.ttf")
+
+
+def validate_words(text: str) -> tuple[str | None, str | None]:
+    """(clean UPPERCASE words, None) or (None, reason): 2-3 complete words, no trailing preposition/article."""
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’!?-]*", text or "")
+    if not 2 <= len(words) <= 3:
+        return None, "Use 2 or 3 words."
+    up = [w.upper() for w in words]
+    if up[-1].rstrip("!?") in _TRAILING_BAD:
+        return None, f"Don't end on '{up[-1]}': the phrase reads unfinished."
+    return " ".join(up), None
+
+
+def suggest_words(hook: str) -> str:
+    """2-3 uppercase words from the hook (trailing prepositions dropped), or '' when that leaves fewer than 2."""
+    words = [w.upper() for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9'’!?-]*", hook or "")][:3]
+    while words and words[-1].rstrip("!?") in _TRAILING_BAD:
+        words.pop()
+    return " ".join(words) if len(words) >= 2 else ""
+
+
+def thumbnail_words(hook: str, max_words: int = 3) -> str:  # kept for older callers
+    return suggest_words(hook)
 
 
 def moment_text(h: dict[str, Any]) -> tuple[str, bool]:
@@ -161,23 +194,81 @@ def moment_text(h: dict[str, Any]) -> tuple[str, bool]:
 
 
 def build_prompts(game: str, style: str, h: dict[str, Any], frame_time: float | None) -> dict[str, Any]:
+    """Two TEXT-FREE prompts for the free Gemini web app; the look follows the clip's outcome mood. The title words
+    are added afterwards by the local composer (compose_thumbnail), so the image model never misspells them."""
     moment, placeholder = moment_text(h)
-    words = thumbnail_words(h.get("hook_caption") or "")
-    text_rule = (f'Add the text "{words}" in large, bold, uppercase letters with a thick outline, placed in the top '
-                 "area." if words else "Do not add any text (add 2-3 words of your own later if you want).")
+    mood = h.get("outcome_mood") or ""
+    look = MOOD_LOOK.get(mood, MOOD_LOOK[""])
+    no_text = ("Do not add any text, letters or numbers to the image; the title words are added afterwards. "
+               "Leave the upper-left area simple enough to hold 2-3 bold words.")
     common = ("Leave the bottom-right corner empty, because YouTube shows the video length there. "
               "Do not show anything that does not happen in the video: no extra characters, explosions, scores, "
               "trophies or logos that are not visible in the gameplay.")
     at = f" (screenshot at {fmt_ts(frame_time)})" if frame_time is not None else ""
-    ref = (f"Turn the attached gameplay screenshot from the PC game \"{game}\"{at} into a bold 16:9 YouTube "
+    ref = (f"Turn the attached gameplay screenshot from the video game \"{game}\"{at} into a bold 16:9 YouTube "
            f"thumbnail (1280x720). The moment: {moment}. Keep the scene and the main subject recognisable and true to "
-           f"the screenshot; crop or zoom to make the main action large and clear, raise contrast and saturation "
-           f"slightly, and simplify the background. {text_rule} {common}")
-    scratch = (f"Create a 16:9 YouTube thumbnail (1280x720) for a \"{style}\" gaming video of the PC game "
-               f"\"{game}\". It shows this real moment from the video: {moment}. One clear focal subject, high "
-               f"contrast, uncluttered background, readable on a phone. {text_rule} {common}")
-    return {"reference_edit": ref, "from_scratch": scratch, "text": words, "needs_user_words": placeholder,
-            "moment": moment}
+           f"the screenshot; crop or zoom to make the main action large and clear, and simplify the background. "
+           f"Look: {look}. {no_text} {common}")
+    scratch = (f"Create a 16:9 YouTube thumbnail (1280x720) for a \"{style}\" gaming video of the video game "
+               f"\"{game}\". It shows this real moment from the video: {moment}. One clear focal subject, "
+               f"uncluttered background, readable on a phone. Look: {look}. {no_text} {common}")
+    return {"reference_edit": ref, "from_scratch": scratch, "text": suggest_words(h.get("hook_caption") or ""),
+            "mood": mood, "needs_user_words": placeholder, "moment": moment}
+
+
+def _bold_font(size: int) -> Any:
+    import os  # noqa: PLC0415
+
+    from PIL import ImageFont  # noqa: PLC0415
+
+    fonts = Path(os.environ.get("WINDIR", r"C:\\Windows")) / "Fonts"
+    for name in FONT_CANDIDATES:
+        if (fonts / name).exists():
+            return ImageFont.truetype(str(fonts / name), size)
+    raise ValueError("No bold font found (looked for Impact, Arial Black, Arial Bold, Segoe UI Black).")
+
+
+def compose_thumbnail(image: Path, words: str, mood: str, out: Path) -> Path:
+    """1280x720 thumbnail: the image cropped to 16:9 (never stretched) with 2-3 bold uppercase words in the upper
+    left, coloured by the outcome mood, with a thick outline. The bottom-right timestamp area is left untouched."""
+    from PIL import Image, ImageDraw  # noqa: PLC0415
+
+    clean, problem = validate_words(words)
+    if clean is None:
+        raise ValueError(problem)
+    with Image.open(image) as im:
+        im = im.convert("RGB")
+        w, h = im.size
+        if w / h > 16 / 9:
+            nw = int(h * 16 / 9)
+            im = im.crop(((w - nw) // 2, 0, (w - nw) // 2 + nw, h))
+        else:
+            nh = int(w * 9 / 16)
+            im = im.crop((0, (h - nh) // 2, w, (h - nh) // 2 + nh))
+        im = im.resize((1280, 720), Image.LANCZOS)
+    d = ImageDraw.Draw(im)
+    parts = clean.split()
+    lines = [clean]
+    size = 150
+    while size > 60:
+        font = _bold_font(size)
+        widest = max(d.textbbox((0, 0), ln, font=font)[2] for ln in lines)
+        if widest <= 0.62 * 1280:
+            break
+        if len(lines) == 1 and len(parts) >= 2:
+            cut = 2 if len(parts) == 3 else 1
+            lines = [" ".join(parts[:cut]), " ".join(parts[cut:])]
+            continue
+        size -= 10
+    font = _bold_font(size)
+    y = 36
+    for ln in lines:
+        d.text((44, y), ln, font=font, fill=MOOD_TEXT_COLOR.get(mood, MOOD_TEXT_COLOR[""]),
+               stroke_width=max(size // 12, 4), stroke_fill=(0, 0, 0))
+        y += int(size * 1.05)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    im.save(out)
+    return out
 
 
 # --- user thumbnail import ---------------------------------------------------------------------------------------
@@ -205,8 +296,9 @@ def validate_user_thumbnail(path: Path) -> tuple[list[str], list[str], dict[str,
     return errors, warnings, {"width": w, "height": h, "format": fmt, "size": size}
 
 
-def safe_area_preview(src: Path, out: Path) -> Path:
-    """The thumbnail with the bottom-right timestamp area outlined (approximate; YouTube does not publish it)."""
+def safe_area_preview(src: Path, out: Path, badge: bool = False) -> Path:
+    """The thumbnail with the bottom-right timestamp area outlined, or (``badge``) a mock '12:34' length badge drawn
+    where YouTube puts it. Approximate: YouTube does not publish the exact size."""
     from PIL import Image, ImageDraw  # noqa: PLC0415
 
     with Image.open(src) as im:
@@ -215,7 +307,16 @@ def safe_area_preview(src: Path, out: Path) -> Path:
         d = ImageDraw.Draw(im, "RGBA")
         bw, bh = int(w * 0.16), int(h * 0.12)
         box = (w - bw - int(w * 0.015), h - bh - int(h * 0.02), w - int(w * 0.015), h - int(h * 0.02))
-        d.rectangle(box, fill=(255, 0, 0, 70), outline=(255, 0, 0, 255), width=max(w // 400, 2))
+        if badge:
+            bx0, by0 = box[0] + bw // 3, box[1] + bh // 3
+            d.rounded_rectangle((bx0, by0, box[2], box[3]), radius=max(h // 120, 4), fill=(0, 0, 0, 200))
+            try:
+                font = _bold_font(max(int((box[3] - by0) * 0.62), 10))
+                d.text(((bx0 + box[2]) / 2, (by0 + box[3]) / 2), "12:34", font=font, fill=(255, 255, 255), anchor="mm")
+            except ValueError:
+                pass
+        else:
+            d.rectangle(box, fill=(255, 0, 0, 70), outline=(255, 0, 0, 255), width=max(w // 400, 2))
         out.parent.mkdir(parents=True, exist_ok=True)
         im.save(out)
     return out

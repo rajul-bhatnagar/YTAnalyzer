@@ -31,7 +31,15 @@ def tc(frame_count: int, base: int) -> str:
     return f"{s_total // 3600:02d}:{(s_total // 60) % 60:02d}:{s_total % 60:02d}:{f:02d}"
 
 
-def build_edl(title: str, clips: list[dict[str, Any]], fps: float, video_name: str, audio_name: str) -> str:
+def fcp_pathurl(path: Path) -> str:
+    """Final Cut Pro 7 XML style file URL: file://localhost/ + the absolute path with forward slashes, percent-encoded
+    (spaces, non-ASCII), drive colon kept: file://localhost/D:/My%20Videos/game%20%C3%BC.mp4."""
+    from urllib.parse import quote  # noqa: PLC0415
+    return "file://localhost/" + quote(Path(path).resolve().as_posix().lstrip("/"), safe="/:")
+
+
+def build_edl(title: str, clips: list[dict[str, Any]], fps: float, video_name: str, audio_name: str,
+              video_url: str | None = None, audio_url: str | None = None) -> str:
     base, ntsc = timebase(fps)
     lines = [f"TITLE: {title[:60]}", "FCM: NON-DROP FRAME", ""]
     rec0 = RECORD_START_HOURS * 3600 * base
@@ -39,9 +47,11 @@ def build_edl(title: str, clips: list[dict[str, Any]], fps: float, video_name: s
     for c in clips:
         si, so = frames(c["source_in"], fps), frames(c["source_out"], fps)
         ri, ro = rec0 + frames(c["record_in"], fps), rec0 + frames(c["record_out"], fps)
-        for track, name in (("V", video_name), ("A", audio_name)):
+        for track, name, url in (("V", video_name, video_url), ("A", audio_name, audio_url)):
             lines.append(f"{n:03d}  AX       {track:<5} C        {tc(si, base)} {tc(so, base)} {tc(ri, base)} {tc(ro, base)}")
             lines.append(f"* FROM CLIP NAME: {name}")
+            if url:
+                lines.append(f"* SOURCE FILE: {url}")
             lines.append("")
             n += 1
     if ntsc:
@@ -105,7 +115,7 @@ def build_fcp7_xml(title: str, clips: list[dict[str, Any]], fps: float, width: i
             f = ET.SubElement(item, "file", id=file_id)
             if i == 1:  # full file definition once; later clips reference the id
                 ET.SubElement(f, "name").text = path.name
-                ET.SubElement(f, "pathurl").text = path.resolve().as_uri()
+                ET.SubElement(f, "pathurl").text = fcp_pathurl(path)
                 _rate(f, base, ntsc)
                 ET.SubElement(f, "duration").text = str(src_frames)
             if kind == "audio":

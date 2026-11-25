@@ -84,6 +84,18 @@ class OllamaProvider:
         return ProviderStatus(True, self.name, self.model, f"Ollama {version}: '{self.model}' is installed, {kind}.",
                               caps, {"version": version})
 
+    def unload(self) -> bool:
+        """Ask Ollama to unload this model now (keep_alive 0, per Ollama's API docs), freeing its VRAM for Whisper on a
+        6 GB GPU. Best effort: never raises."""
+        if not self.model:
+            return False
+        try:
+            with self._client(30) as c:
+                r = c.post("/api/generate", json={"model": self.model, "keep_alive": 0})
+            return r.status_code < 400
+        except httpx.HTTPError:
+            return False
+
     # --- inference ------------------------------------------------------------------------------
     def generate_json(self, system: str, prompt: str, schema: dict[str, Any], images: list[ImageInput] | None = None,
                       video: VideoInput | None = None) -> str:
