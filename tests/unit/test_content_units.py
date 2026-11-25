@@ -179,3 +179,22 @@ def test_user_thumbnail_validation(tmp_path: Path):
     bad = tmp_path / "b.png"
     bad.write_bytes(b"xx")
     assert tp.validate_user_thumbnail(bad)[0]
+
+
+@requires_ffmpeg
+def test_silent_source_passes_with_warning_but_lost_audio_fails(tmp_path):
+    from pipeline import ffmpeg_tools as fx
+    src = tmp_path / "src.mp4"
+    fx.ffmpeg(["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=6", "-c:v",
+               "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(src)])
+    silent = tmp_path / "silent.wav"
+    fx.ffmpeg(["-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "6", str(silent)])
+    loud = tmp_path / "loud.wav"
+    fx.ffmpeg(["-y", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=6:sample_rate=48000", str(loud)])
+    out = tmp_path / "out.mp4"
+    sb.render_short(src, silent, 1.0, 5.0, sb.ShortSettings(quality="fast"), (640, 360), 30.0, "libx264",
+                    tmp_path / "w", None, out)
+    errors, det = sb.validate_short(out, 4.0, src, 1.0, True, tmp_path / "w", silent)
+    assert errors == [] and "no audible sound" in det["warnings"][0]
+    errors, _ = sb.validate_short(out, 4.0, src, 1.0, True, tmp_path / "w", loud)
+    assert errors and "although the audio mix has sound" in errors[0]

@@ -140,7 +140,8 @@ def _short_spec(db, paths, lc, project, settings, h, src_id, has_audio) -> Stage
                                           cancel_check=ctx.cancel_check)
         ctx.progress(0.9, f"Validating Short #{hid}")
         errors, details = shorts_builder.validate_short(out, end - start, lc.source, start, audio is not None,
-                                                        f.short_work(hid))
+                                                        f.short_work(hid), audio)
+        warnings += details["warnings"]
         rep.update({"encoder_reason": why, "backup": paths.to_stored(backup) if backup else None,
                     "highlight_id": hid, "start": start, "end": end})
         db.execute("INSERT INTO rendered_outputs(project_id, output_type, path, highlight_id, settings, "

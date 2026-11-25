@@ -174,8 +174,10 @@ def _frame_brightness(video: Path, t: float, work: Path, name: str, vf: str | No
 
 
 def validate_short(out: Path, expected_dur: float, source: Path, start: float, audio_expected: bool,
-                   work_dir: Path) -> tuple[list[str], dict[str, Any]]:
+                   work_dir: Path, audio_src: Path | None = None) -> tuple[list[str], dict[str, Any]]:
+    """(errors, details). details["warnings"] holds non-blocking findings (e.g. the recording itself is silent)."""
     errors: list[str] = []
+    warnings: list[str] = []
     info = probe(out)
     if abs(info.duration_sec - expected_dur) > 0.25:
         errors.append(f"Duration {info.duration_sec:.2f}s, expected {expected_dur:.2f}s")
@@ -190,7 +192,13 @@ def validate_short(out: Path, expected_dur: float, source: Path, start: float, a
         else:
             stats = audio_stats(out)
             if (stats.get("rms_db") or -120) < -70:
-                errors.append("Audio is silent")
+                # Silent output is an error only if the same part of the audio mix is NOT silent.
+                src_rms = (audio_stats(audio_src, start, expected_dur).get("rms_db") or -120) if audio_src else None
+                if src_rms is not None and src_rms < -70:
+                    warnings.append("This part of the recording has no audible sound, so the Short is silent. "
+                                    "Add a voiceover or music if you want sound.")
+                else:
+                    errors.append("Audio is silent although the audio mix has sound here (rendering problem)")
     dec = decode_check(out, 2)
     if dec:
         errors.append("Start does not decode: " + "; ".join(dec[:2]))
@@ -208,4 +216,4 @@ def validate_short(out: Path, expected_dur: float, source: Path, start: float, a
             black.append(round(t, 1))
     if len(black) >= 2:
         errors.append(f"Output is black at {black} s although the source is not (filter error)")
-    return errors, {"probe": info.model_dump(), "audio_stats": stats}
+    return errors, {"probe": info.model_dump(), "audio_stats": stats, "warnings": warnings}
